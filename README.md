@@ -4,7 +4,7 @@ This is the Github page for the POOLD project. POOLD is a mobile-first app that 
 
 For Quick Access to the Backlog of this Project, see [here](https://github.com/users/BluArch/projects/4)
 
-This project is currently in the form of an MVP, to access this MVP, find it on [Figma](https://www.figma.com/design/pUkAndNcVv3pBQpuhgTten/SENG455-M2-Medium-Fid-prototype?node-id=0-1&p=f&t=WPyAjZokRCkk2Dv6-0) and press Present (or opt cmd Enter)
+This project is currently in the form of a preliminary prototype, to access this prototype, find it on [Figma](https://www.figma.com/design/pUkAndNcVv3pBQpuhgTten/SENG455-M2-Medium-Fid-prototype?node-id=0-1&p=f&t=WPyAjZokRCkk2Dv6-0) and press Present (or opt cmd Enter)
 
 # Join Community Groups
 
