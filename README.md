@@ -5,3 +5,15 @@ This is the Github page for the POOLD project. POOLD is a mobile-first app that 
 For Quick Access to the Backlog of this Project, see [here](https://github.com/users/BluArch/projects/4)
 
 This project is currently in the form of an MVP, to access this MVP, find it on [Figma](https://www.figma.com/design/pUkAndNcVv3pBQpuhgTten/SENG455-M2-Medium-Fid-prototype?node-id=0-1&p=f&t=WPyAjZokRCkk2Dv6-0) and press Present (or opt cmd Enter)
+
+# Join Community Groups
+<img src="project_page_images/Communities_Page.png" alt="Communities_page" width="250">
+
+
+# Take Your Share
+
+<img src="project_page_images/Review_orders.png" alt="Review Order" width="250"> <img src="project_page_images/Pickup_Orders.png" alt="Pickup Orders" width="250">
+
+# Create Your Own Group
+
+<img src="project_page_images/Group_Creation.png" alt="Create Group" width="250">
