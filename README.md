@@ -6,6 +6,8 @@ For Quick Access to the Backlog of this Project, see [here](https://github.com/u
 
 This project is currently in the form of a preliminary prototype, to access this prototype, find it on [Figma](https://www.figma.com/design/pUkAndNcVv3pBQpuhgTten/SENG455-M2-Medium-Fid-prototype?node-id=0-1&p=f&t=WPyAjZokRCkk2Dv6-0) and press Present (or opt cmd Enter)
 
+The Wiki is still under development, to access requirements/project documentation, see the Documentation file in the project repository
+
 # Join Community Groups
 
 Join others in your community on bulk order trips, it's the lower price with the portion sizes you want!
