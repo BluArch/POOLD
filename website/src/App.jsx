@@ -35,8 +35,11 @@ function App() {
                 See How It Works
               </a>
 
-              <a className="secondary-button" href="#preview">
+              {/* <a className="secondary-button" href="#preview">
                 View App
+              </a> */}
+              <a className="secondary-button" href="#mvp">
+                Try the MVP
               </a>
             </div>
           </div>
@@ -344,6 +347,40 @@ function App() {
               />
               <p>Coordinate pickup</p>
             </div>
+          </div>
+        </section>
+
+        <section className="section mvp-section" id="mvp">
+          <div className="mvp-content">
+            <p className="section-label">TRY POOLD</p>
+
+            <h2>Ready to try the MVP?</h2>
+
+            <p>
+              Experience the POOLD group-buying flow and see how communities can
+              purchase in bulk together.
+            </p>
+
+            <a
+              className="mvp-download-button"
+              href="YOUR_MVP_LINK_HERE"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Install the MVP
+              <span>↗</span>
+            </a>
+
+            <p className="mvp-note">
+              Currently available as a prototype for testing.
+            </p>
+          </div>
+
+          <div className="mvp-phone">
+            <img
+              src="/images/Community_Example.png"
+              alt="POOLD mobile app"
+            />
           </div>
         </section>
 
