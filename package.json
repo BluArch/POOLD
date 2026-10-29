@@ -1,0 +1,35 @@
+{
+  "name": "poold",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24.12.0"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n api,mobile \"npm run dev -w @poold/api\" \"npm run web -w @poold/mobile\"",
+    "db:local": "node scripts/local-mysql.mjs",
+    "db:migrate": "npm run migrate -w @poold/api",
+    "db:seed": "npm run seed -w @poold/api",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint apps packages",
+    "test": "npm run test -w @poold/api",
+    "build": "npm run build -w @poold/contracts && npm run build -w @poold/api && npm run export -w @poold/mobile",
+    "prepare": "npm run build -w @poold/contracts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "concurrently": "^9.2.0",
+    "eslint": "^9.39.0",
+    "prettier": "^3.9.10",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.46.0"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.6"
+  }
+}

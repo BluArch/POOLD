@@ -1,0 +1,35 @@
+{
+  "name": "@poold/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file=../../.env src/index.ts",
+    "start": "node --env-file=../../.env dist/index.js",
+    "migrate": "tsx --env-file=../../.env src/migrate.ts",
+    "seed": "tsx --env-file=../../.env src/seed.ts",
+    "jobs": "tsx --env-file=../../.env src/run-jobs.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "test": "tsx --env-file=../../.env --test --test-concurrency=1 test/*.test.ts",
+    "mail:verify": "tsx --env-file=../../.env src/check-mail.ts"
+  },
+  "dependencies": {
+    "@poold/contracts": "*",
+    "express": "^5.1.0",
+    "mysql2": "^3.24.6",
+    "zod": "^4.1.12",
+    "cors": "^2.8.5",
+    "helmet": "^8.1.0",
+    "express-rate-limit": "^8.2.1",
+    "nodemailer": "^10.0.0",
+    "firebase-admin": "^14.5.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.6",
+    "@types/express": "^5.0.3",
+    "@types/cors": "^2.8.19",
+    "@types/node": "^22.19.0",
+    "@types/nodemailer": "^7.0.0"
+  }
+}

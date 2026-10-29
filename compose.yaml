@@ -1,0 +1,20 @@
+services:
+  mysql:
+    image: mysql:8.4
+    ports:
+      - "127.0.0.1:3308:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: poold_root_local_only
+      MYSQL_DATABASE: poold_dev
+      MYSQL_USER: poold
+      MYSQL_PASSWORD: poold_local_only
+    volumes:
+      - poold_mysql:/var/lib/mysql
+      - ./db/docker-init.sql:/docker-entrypoint-initdb.d/02-test.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+volumes:
+  poold_mysql:
