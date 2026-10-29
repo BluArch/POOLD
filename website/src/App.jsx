@@ -2,12 +2,13 @@ import "./App.css";
 
 function App() {
   return (
-    <div className="site">
+    <div className="site" id="top">
       <nav className="navbar">
         <div className="brand">POOLD</div>
 
         <div className="nav-links">
           <a href="#how-it-works">How It Works</a>
+          <a href="#journey">Journey</a>
           <a href="#features">Features</a>
           <a href="#preview">Preview</a>
         </div>
@@ -95,8 +96,159 @@ function App() {
               <span>04</span>
               <h3>Pick It Up</h3>
               <p>
-                Collect your packed order at the scheduled community pickup.
+                Collect your items at the scheduled community pickup.
               </p>
+            </div>
+          </div>
+        </section>
+
+        <section className="section journey-section" id="journey">
+          <p className="section-label">BUYER & ORGANIZER JOURNEY</p>
+          <h2>One group order. Two connected experiences.</h2>
+
+          <p className="journey-intro">
+            POOLD guides the order from the moment an organizer creates it to
+            the moment every buyer collects their share.
+          </p>
+
+          <div className="journey-labels">
+            <div className="journey-role-label buyer-role-label">Buyer</div>
+            <div className="journey-role-label organizer-role-label">
+              Organizer
+            </div>
+          </div>
+
+          <div className="journey-timeline">
+            <div className="timeline-line"></div>
+
+            <div className="timeline-step organizer-step">
+              <div className="timeline-card organizer-timeline-card">
+                <div className="timeline-number">01</div>
+                <div className="scene-icon">📋</div>
+                <h3>Create the group order</h3>
+                <p>
+                  The organizer chooses the store, products, deadline, and
+                  pickup details.
+                </p>
+              </div>
+              <div className="timeline-node"></div>
+            </div>
+
+            <div className="timeline-step buyer-step">
+              <div className="timeline-card buyer-timeline-card">
+                <div className="timeline-number">02</div>
+                <div className="scene-icon">🛒</div>
+                <h3>Join & claim items</h3>
+                <p>
+                  The buyer joins the order and selects only the quantities they
+                  want from each bulk product.
+                </p>
+              </div>
+              <div className="timeline-node"></div>
+            </div>
+
+            {/* <div className="timeline-step organizer-step">
+              <div className="timeline-card organizer-timeline-card">
+                <div className="timeline-number">03</div>
+                <div className="scene-icon">📊</div>
+                <h3>Review commitments</h3>
+                <p>
+                  The organizer sees who joined, what everyone claimed, and the
+                  quantities needed for the shopping run.
+                </p>
+              </div>
+              <div className="timeline-node"></div>
+            </div> */}
+
+            <div className="timeline-step organizer-step">
+              <div className="timeline-card organizer-timeline-card">
+                <div className="timeline-number">03</div>
+                <div className="scene-icon moving-car">🚗</div>
+                <h3>Review & shop</h3>
+                <p>
+                  Review the group’s claimed quantities, then use the consolidated
+                  shopping list to purchase the bulk items.
+                </p>
+              </div>
+              <div className="timeline-node"></div>
+            </div>
+
+            {/* <div className="timeline-step buyer-step">
+              <div className="timeline-card buyer-timeline-card">
+                <div className="timeline-number">04</div>
+                <div className="scene-icon">✅</div>
+                <h3>Confirm the order</h3>
+                <p>
+                  The buyer reviews their quantities and total so they know
+                  exactly what they are expecting.
+                </p>
+              </div>
+              <div className="timeline-node"></div>
+            </div> */}
+
+            {/* <div className="timeline-step organizer-step">
+              <div className="timeline-card organizer-timeline-card">
+                <div className="timeline-number">04</div>
+                <div className="scene-icon moving-car">🚗</div>
+                <h3>Go shopping</h3>
+                <p>
+                  The organizer uses the consolidated shopping list to purchase
+                  the bulk items for the group.
+                </p>
+              </div>
+              <div className="timeline-node"></div>
+            </div> */}
+
+            <div className="timeline-step buyer-step">
+              <div className="timeline-card buyer-timeline-card">
+                <div className="timeline-number">04</div>
+                <div className="scene-icon">🔔</div>
+                <h3>Head to pickup</h3>
+                <p>
+                  The buyer receives the pickup details and goes to the meeting
+                  point during the scheduled pickup window.
+                </p>
+              </div>
+              <div className="timeline-node"></div>
+            </div>
+
+            <div className="timeline-step organizer-step">
+              <div className="timeline-card organizer-timeline-card">
+                <div className="timeline-number">05</div>
+                <div className="scene-icon">📍</div>
+                <h3>Manage pickup</h3>
+                <p>
+                  The organizer brings the bulk items to the meeting spot and
+                  stays for the pickup window.
+                </p>
+              </div>
+              <div className="timeline-node"></div>
+            </div>
+
+            <div className="timeline-step buyer-step">
+              <div className="timeline-card buyer-timeline-card">
+                <div className="timeline-number">06</div>
+                <div className="scene-icon">🥬</div>
+                <h3>Collect your share</h3>
+                <p>
+                  The buyer takes the exact quantities they claimed from the
+                  group purchase.
+                </p>
+              </div>
+              <div className="timeline-node"></div>
+            </div>
+
+            <div className="timeline-step organizer-step">
+              <div className="timeline-card organizer-timeline-card">
+                <div className="timeline-number">07</div>
+                <div className="scene-icon pop-check">✓</div>
+                <h3>Confirm handoff</h3>
+                <p>
+                  The organizer verifies that each member received what they
+                  claimed and marks the pickup as complete.
+                </p>
+              </div>
+              <div className="timeline-node"></div>
             </div>
           </div>
         </section>
@@ -125,7 +277,7 @@ function App() {
             <div className="feature-card">
               <h3>Organizer Dashboard</h3>
               <p>
-                Organizers can keep track of orders, quantities, packing, and
+                Organizers can keep track of orders, quantities, shopping, and
                 pickup from one place.
               </p>
             </div>

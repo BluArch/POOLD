@@ -175,6 +175,295 @@ a {
   color: #484848;
 }
 
+/* -------------------------------------------------- */
+/* BUYER / ORGANIZER JOURNEY */
+/* -------------------------------------------------- */
+
+.journey-section {
+  background: #eef2e8;
+  overflow: hidden;
+}
+
+.journey-intro {
+  max-width: 700px;
+  font-size: 1.15rem;
+  line-height: 1.7;
+  color: #4e4e4e;
+  margin-bottom: 55px;
+}
+
+.journey-labels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  max-width: 900px;
+  margin: 0 auto 20px;
+  gap: 90px;
+}
+
+.journey-role-label {
+  text-align: center;
+  padding: 14px 20px;
+  border-radius: 999px;
+  font-size: 1.05rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.buyer-role-label {
+  background: var(--yellow);
+}
+
+.organizer-role-label {
+  background: var(--green);
+  color: white;
+}
+
+.journey-timeline {
+  position: relative;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 25px 0 40px;
+}
+
+/*
+  The vertical line gives the journey a central spine.
+  Each alternating card connects to it, producing the zigzag.
+*/
+.timeline-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 4px;
+  background: rgba(22, 22, 22, 0.17);
+  transform: translateX(-50%);
+  border-radius: 999px;
+}
+
+.timeline-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 90px 1fr;
+  align-items: center;
+  min-height: 210px;
+}
+
+.timeline-card {
+  position: relative;
+  padding: 24px 26px;
+  background: white;
+  border-radius: 20px;
+  box-shadow: 0 13px 30px rgba(0, 0, 0, 0.09);
+  opacity: 0;
+  animation: journeyFadeIn 0.7s ease forwards;
+}
+
+/* Buyer cards go on the left */
+.buyer-step .timeline-card {
+  grid-column: 1;
+  justify-self: end;
+  width: min(100%, 390px);
+}
+
+/* Organizer cards go on the right */
+.organizer-step .timeline-card {
+  grid-column: 3;
+  justify-self: start;
+  width: min(100%, 390px);
+}
+
+.buyer-timeline-card {
+  border-top: 5px solid var(--yellow);
+}
+
+.organizer-timeline-card {
+  border-top: 5px solid var(--green);
+}
+
+/*
+  Horizontal connector from LEFT buyer card → centre line.
+*/
+.buyer-step .timeline-card::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: -45px;
+  width: 45px;
+  height: 3px;
+  background: rgba(22, 22, 22, 0.22);
+}
+
+/*
+  Horizontal connector from centre line → RIGHT organizer card.
+*/
+.organizer-step .timeline-card::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -45px;
+  width: 45px;
+  height: 3px;
+  background: rgba(22, 22, 22, 0.22);
+}
+
+.timeline-node {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  background: var(--orange);
+  border: 4px solid #eef2e8;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 3px rgba(232, 75, 44, 0.18);
+  z-index: 2;
+}
+
+.timeline-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  height: 28px;
+  padding: 0 10px;
+  margin-bottom: 14px;
+  border-radius: 999px;
+  background: var(--cream);
+  color: var(--orange);
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.timeline-card h3 {
+  font-size: 1.35rem;
+  margin: 5px 0 10px;
+}
+
+.timeline-card p {
+  margin: 0;
+  line-height: 1.6;
+  color: #4e4e4e;
+}
+
+.scene-icon {
+  display: inline-block;
+  font-size: 2.1rem;
+  margin-bottom: 10px;
+  animation: floatSoft 2.8s ease-in-out infinite;
+}
+
+.moving-car {
+  animation: driveAcross 2.8s ease-in-out infinite;
+}
+
+.pop-check {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--green);
+  color: white;
+  font-size: 1.4rem;
+  font-weight: 900;
+  animation: popSoft 1.8s ease-in-out infinite;
+}
+
+/*
+  Stagger the appearance slightly so the page feels animated
+  without turning into a full video.
+*/
+.timeline-step:nth-child(2) .timeline-card {
+  animation-delay: 0.05s;
+}
+
+.timeline-step:nth-child(3) .timeline-card {
+  animation-delay: 0.1s;
+}
+
+.timeline-step:nth-child(4) .timeline-card {
+  animation-delay: 0.15s;
+}
+
+.timeline-step:nth-child(5) .timeline-card {
+  animation-delay: 0.2s;
+}
+
+.timeline-step:nth-child(6) .timeline-card {
+  animation-delay: 0.25s;
+}
+
+.timeline-step:nth-child(7) .timeline-card {
+  animation-delay: 0.3s;
+}
+
+.timeline-step:nth-child(8) .timeline-card {
+  animation-delay: 0.35s;
+}
+
+.timeline-step:nth-child(9) .timeline-card {
+  animation-delay: 0.4s;
+}
+
+.timeline-step:nth-child(10) .timeline-card {
+  animation-delay: 0.45s;
+}
+
+@keyframes journeyFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes floatSoft {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes driveAcross {
+  0% {
+    transform: translateX(0);
+  }
+
+  50% {
+    transform: translateX(18px);
+  }
+
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes popSoft {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.14);
+  }
+}
+
+/* -------------------------------------------------- */
+/* ORIGINAL PAGE CONTINUES */
+/* -------------------------------------------------- */
+
 .features-section {
   background: var(--dark-green);
   color: white;
@@ -274,6 +563,29 @@ footer {
   .screenshots {
     grid-template-columns: repeat(2, 1fr);
   }
+
+  .journey-labels {
+    gap: 35px;
+  }
+
+  .timeline-step {
+    grid-template-columns: 1fr 60px 1fr;
+  }
+
+  .buyer-step .timeline-card,
+  .organizer-step .timeline-card {
+    width: 100%;
+  }
+
+  .buyer-step .timeline-card::after {
+    right: -30px;
+    width: 30px;
+  }
+
+  .organizer-step .timeline-card::before {
+    left: -30px;
+    width: 30px;
+  }
 }
 
 @media (max-width: 600px) {
@@ -299,6 +611,54 @@ footer {
   .feature-grid,
   .screenshots {
     grid-template-columns: 1fr;
+  }
+
+  /*
+    On phones, the zigzag becomes a single clean timeline.
+    This prevents the cards from becoming too narrow.
+  */
+  .journey-labels {
+    display: none;
+  }
+
+  .journey-timeline {
+    padding-left: 38px;
+  }
+
+  .timeline-line {
+    left: 12px;
+  }
+
+  .timeline-step {
+    display: block;
+    min-height: auto;
+    padding: 12px 0 26px;
+  }
+
+  .buyer-step .timeline-card,
+  .organizer-step .timeline-card {
+    width: 100%;
+    justify-self: auto;
+  }
+
+  .buyer-step .timeline-card::after,
+  .organizer-step .timeline-card::before {
+    left: -26px;
+    right: auto;
+    width: 26px;
+    top: 50%;
+  }
+
+  .timeline-node {
+    left: 12px;
+  }
+
+  .buyer-timeline-card {
+    border-top-color: var(--yellow);
+  }
+
+  .organizer-timeline-card {
+    border-top-color: var(--green);
   }
 
   .cta-section {
