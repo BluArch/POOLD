@@ -2,7 +2,7 @@
 services:
   - type: web
     name: poold
-    branch: codex/render-aiven-hosting
+    branch: main
     runtime: node
     plan: free
     region: oregon
