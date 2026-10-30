@@ -1,6 +1,12 @@
 # Free hosting for POOLD
 
-Selected October 29, 2026: **Render Free** for Express and the Expo web app, **Aiven Free MySQL** for persistent data, and **Brevo Free** for verification mail. Deployment is pending account access and live cloud verification.
+Live October 30, 2026: **Render Free** for Express and the Expo web app, **Aiven Free MySQL** for persistent data, and **Brevo Free** for verification mail.
+
+- App: **https://poold.onrender.com**
+- API base: **https://poold.onrender.com/api**
+- Health: **https://poold.onrender.com/api/health**
+- [Render dashboard](https://dashboard.render.com/web/srv-dbi5h5dg1s2s73e2f990)
+- [Aiven database](https://console.aiven.io/account/a5eedab9b0d8/project/poold/services/poold-mysql/overview)
 
 This preserves the current MySQL transactions and constraints. Firebase Functions requires the billing-enabled Blaze plan, and Firestore would require a database rewrite. Supabase uses PostgreSQL, requiring a migration. Vercel Hobby's daily cron limit does not fit the existing minute-based reminders. Koyeb's current signup/billing requirements make its free instance less straightforward for a new account.
 
@@ -9,8 +15,10 @@ This preserves the current MySQL transactions and constraints. Firebase Function
 - Aiven service `poold-mysql` exists on the **Free** tier, running MySQL 8.4.11 in DigitalOcean San Francisco.
 - Database `poold` has all three migrations applied. The `poold_app` user is restricted to that database and requires TLS. Certificate and hostname verification passed. No demo accounts or orders were seeded into `poold`.
 - All **17 API tests passed against a separate Aiven `poold_test` database**, including concurrent claims, membership capacity, transactions, verification, fulfillment and reminder idempotency. Test fixtures are confined to `poold_test`, which is not accessible to the production `poold_app` user.
-- The Render **Free** service form is prepared in the Poold workspace with branch `codex/render-aiven-hosting`, production configuration and database secrets. The service has not yet been submitted/deployed.
-- Brevo email identity verification passed. SMTP key creation is waiting on Brevo's required phone verification. A working sender and SMTP authentication still need verification before the app is deployed.
+- Render service `poold` is **Live** on **Free**, in the Poold workspace, with manual deploys from `codex/render-aiven-hosting`. Initial deployment `dep-dbi5h5tg1s2s73e2fa30` built commit `710df3d` with Node 24.22.2, confirmed the three existing migration versions, and started on Render's port 10000. The later documentation-only commit records this live result and does not change the deployed runtime.
+- Brevo email and phone verification completed. The verified sender is named **Poold**. SMTP key **POOLD production** was created with its default October 30, 2027 expiry; Brevo also expires keys after 90 days of inactivity. Mandatory STARTTLS and authentication on port 2525 passed a local live check without sending email. SMTP credentials are in Render's private environment. Actual inbox delivery and SMTP connectivity originating from Render have not yet been tested.
+- Live HTTPS checks passed: MySQL health (`200`, `{ "ok": true, "database": "mysql" }`), signed-out session (`demoEnabled: false`), protected orders (`401`), missing API routes (`404`), cross-origin writes (`403`), and disabled demo/outbox routes (`404`). The root page, order deep-link HTML and JavaScript assets return successfully; missing assets return `404`.
+- The hosted sign-in screen rendered with no browser errors or warnings. No cloud user account was created by deployment verification. Registration, code receipt, cookie persistence for a signed-in cloud account and a real user's order flow remain live recipient checks; the corresponding API flows passed the separate Aiven test suite.
 
 Cloud account credentials are kept out of Git and documentation. Temporary local setup files are under ignored `.local/hosting` with private credential file permissions.
 
@@ -50,7 +58,7 @@ These are currently $0 tiers within their limits, suited to the course MVP/demo.
 
 5. The Blueprint builds with `npm ci --include=dev && npm run build:host`, then runs `npm run start:host`. Startup applies migrations before listening; it never seeds demo users. The MySQL migration lock prevents concurrent migration execution. Free hosting runs migrations in the start command without a paid pre-deploy job.
 6. Render supplies `RENDER_EXTERNAL_URL`, used as the allowed browser origin and invitation URL. Web requests use `/api`, keeping HttpOnly cookies on the same origin. For a custom domain, set `APP_ORIGIN` and `PUBLIC_APP_URL` to its HTTPS origin. `STATIC_WEB_DIR=../mobile/dist` is relative to the API workspace used by the start command.
-7. Native Expo builds need `EXPO_PUBLIC_API_URL=https://<actual-render-host>/api` in the mobile environment, followed by a client restart/rebuild. Never put private credentials in `EXPO_PUBLIC_*` variables.
+7. Native Expo builds need `EXPO_PUBLIC_API_URL=https://poold.onrender.com/api` in the mobile environment, followed by a client restart/rebuild. The existing local-development mobile `.env` is retained. The hosted web build already uses same-origin `/api`. Never put private credentials in `EXPO_PUBLIC_*` variables.
 
 Production disables demo login and the development outbox. Optional FCM stays disabled until its own credentials and native configuration are supplied. In-app notifications remain available.
 
@@ -60,14 +68,10 @@ Local hosting build, lint, typecheck and 17 API tests passed against the dedicat
 
 The exported web app was also served locally from Express on one origin: its existing session loaded community groups from local MySQL, opened an order, and survived a direct order-page reload. The browser reported no errors during that check. This used the local development database and does not establish cloud health.
 
-Before declaring deployment complete:
+Live recipient checks not yet performed:
 
-- Open the actual HTTPS app and `/api/health`; expect `{ "ok": true, "database": "mysql" }`.
-- Confirm Aiven TLS connectivity and all three migration records.
 - Register, receive the email code, verify, and confirm reload preserves the session.
 - Create and re-open a test order, restart the service, and confirm persistence.
-- Confirm production rejects `/api/auth/demo` and `/api/dev/outbox`.
-- Open an order deep link and check for browser/asset errors.
 
 ## Official references
 
