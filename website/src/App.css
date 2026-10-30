@@ -1,0 +1,820 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&display=swap");
+
+:root {
+  --green: #879b79;
+  --dark-green: #65745d;
+  --cream: #f4ede1;
+  --orange: #e84b2c;
+  --yellow: #f8e99b;
+  --black: #161616;
+  --white: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--cream);
+  color: var(--black);
+  font-family: "Manrope", sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.brand,
+.hero h1,
+.section h2,
+.cta-section h2,
+.step-card h3,
+.feature-card h3,
+.screenshot-card p,
+.timeline-card h3,
+.primary-button,
+.secondary-button,
+.journey-role-label,
+.timeline-number {
+  font-family: "Outfit", sans-serif;
+}
+
+.hero-description,
+.intro p:last-child,
+.step-card p,
+.feature-card p,
+.timeline-card p,
+footer,
+.nav-links,
+.section p,
+.journey-intro {
+  font-family: "Manrope", sans-serif;
+}
+
+.site {
+  min-height: 100vh;
+}
+
+.navbar {
+  max-width: 1200px;
+  margin: auto;
+  padding: 28px 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.brand {
+  font-size: 1.8rem;
+  font-weight: 900;
+}
+
+.nav-links {
+  display: flex;
+  gap: 28px;
+  font-weight: 600;
+}
+
+.nav-links a:hover {
+  color: var(--orange);
+}
+
+.hero {
+  max-width: 1200px;
+  margin: auto;
+  min-height: 75vh;
+  padding: 60px 40px 90px;
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 70px;
+  align-items: center;
+}
+
+.eyebrow,
+.section-label {
+  color: var(--orange);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  font-size: 0.85rem;
+}
+
+.hero h1 {
+  font-size: clamp(4rem, 8vw, 7rem);
+  line-height: 0.9;
+  margin: 18px 0 28px;
+  letter-spacing: -0.06em;
+}
+
+.hero-description {
+  max-width: 620px;
+  font-size: 1.25rem;
+  line-height: 1.6;
+  color: #454545;
+}
+
+.hero-buttons {
+  display: flex;
+  gap: 14px;
+  margin-top: 32px;
+}
+
+.primary-button,
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 24px;
+  border-radius: 999px;
+  font-family: "Outfit", sans-serif;
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: 0.01em;
+  transition: all 0.22s ease;
+  cursor: pointer;
+}
+
+.primary-button {
+  background: var(--orange);
+  color: white;
+  box-shadow: 0 10px 24px rgba(232, 75, 44, 0.25);
+}
+
+.primary-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px rgba(232, 75, 44, 0.32);
+}
+
+.secondary-button {
+  border: 2px solid var(--black);
+  background: transparent;
+}
+
+.secondary-button:hover {
+  background: rgba(0, 0, 0, 0.05);
+  transform: translateY(-2px);
+}
+
+.hero-image {
+  display: flex;
+  justify-content: center;
+}
+
+.hero-image img {
+  width: min(100%, 320px);
+  max-height: 610px;
+  object-fit: contain;
+  border-radius: 0;
+  box-shadow: none;
+  filter: drop-shadow(0 18px 24px rgba(0, 0, 0, 0.16));
+}
+
+.section {
+  padding: 100px max(40px, calc((100vw - 1120px) / 2));
+}
+
+.section h2,
+.cta-section h2 {
+  font-size: clamp(2.4rem, 5vw, 4.4rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  margin: 12px 0 30px;
+}
+
+.intro {
+  background: var(--green);
+}
+
+.intro p:last-child {
+  font-size: 1.25rem;
+  line-height: 1.7;
+  max-width: 850px;
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+  margin-top: 50px;
+}
+
+.step-card {
+  padding: 28px;
+  border-top: 3px solid var(--orange);
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.step-card span {
+  color: var(--orange);
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.step-card h3 {
+  font-size: 1.4rem;
+  margin: 15px 0 10px;
+}
+
+.step-card p {
+  line-height: 1.6;
+  color: #484848;
+}
+
+/* -------------------------------------------------- */
+/* BUYER / ORGANIZER JOURNEY */
+/* -------------------------------------------------- */
+
+.journey-section {
+  background: #eef2e8;
+  overflow: hidden;
+}
+
+.journey-intro {
+  max-width: 700px;
+  font-size: 1.15rem;
+  line-height: 1.7;
+  color: #4e4e4e;
+  margin-bottom: 55px;
+}
+
+.journey-labels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  max-width: 900px;
+  margin: 0 auto 20px;
+  gap: 90px;
+}
+
+.journey-role-label {
+  text-align: center;
+  padding: 14px 20px;
+  border-radius: 999px;
+  font-size: 1.05rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.buyer-role-label {
+  background: var(--yellow);
+}
+
+.organizer-role-label {
+  background: var(--green);
+  color: white;
+}
+
+.journey-timeline {
+  position: relative;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 25px 0 40px;
+}
+
+/*
+  The vertical line gives the journey a central spine.
+  Each alternating card connects to it, producing the zigzag.
+*/
+.timeline-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 4px;
+  background: rgba(22, 22, 22, 0.17);
+  transform: translateX(-50%);
+  border-radius: 999px;
+}
+
+.timeline-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 90px 1fr;
+  align-items: center;
+  min-height: 210px;
+}
+
+.timeline-card {
+  position: relative;
+  padding: 24px 26px;
+  background: white;
+  border-radius: 20px;
+  box-shadow: 0 13px 30px rgba(0, 0, 0, 0.09);
+  opacity: 0;
+  animation: journeyFadeIn 0.7s ease forwards;
+}
+
+/* Buyer cards go on the left */
+.buyer-step .timeline-card {
+  grid-column: 1;
+  justify-self: end;
+  width: min(100%, 390px);
+}
+
+/* Organizer cards go on the right */
+.organizer-step .timeline-card {
+  grid-column: 3;
+  justify-self: start;
+  width: min(100%, 390px);
+}
+
+.buyer-timeline-card {
+  border-top: 5px solid var(--yellow);
+}
+
+.organizer-timeline-card {
+  border-top: 5px solid var(--green);
+}
+
+/*
+  Horizontal connector from LEFT buyer card → centre line.
+*/
+.buyer-step .timeline-card::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: -45px;
+  width: 45px;
+  height: 3px;
+  background: rgba(22, 22, 22, 0.22);
+}
+
+/*
+  Horizontal connector from centre line → RIGHT organizer card.
+*/
+.organizer-step .timeline-card::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -45px;
+  width: 45px;
+  height: 3px;
+  background: rgba(22, 22, 22, 0.22);
+}
+
+.timeline-node {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  background: var(--orange);
+  border: 4px solid #eef2e8;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 3px rgba(232, 75, 44, 0.18);
+  z-index: 2;
+}
+
+.timeline-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  height: 28px;
+  padding: 0 10px;
+  margin-bottom: 14px;
+  border-radius: 999px;
+  background: var(--cream);
+  color: var(--orange);
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.timeline-card h3 {
+  font-size: 1.35rem;
+  margin: 5px 0 10px;
+}
+
+.timeline-card p {
+  margin: 0;
+  line-height: 1.6;
+  color: #4e4e4e;
+}
+
+.scene-icon {
+  display: inline-block;
+  font-size: 2.1rem;
+  margin-bottom: 10px;
+  animation: floatSoft 2.8s ease-in-out infinite;
+}
+
+.moving-car {
+  animation: driveAcross 2.8s ease-in-out infinite;
+}
+
+.pop-check {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--green);
+  color: white;
+  font-size: 1.4rem;
+  font-weight: 900;
+  animation: popSoft 1.8s ease-in-out infinite;
+}
+
+/*
+  Stagger the appearance slightly so the page feels animated
+  without turning into a full video.
+*/
+.timeline-step:nth-child(2) .timeline-card {
+  animation-delay: 0.05s;
+}
+
+.timeline-step:nth-child(3) .timeline-card {
+  animation-delay: 0.1s;
+}
+
+.timeline-step:nth-child(4) .timeline-card {
+  animation-delay: 0.15s;
+}
+
+.timeline-step:nth-child(5) .timeline-card {
+  animation-delay: 0.2s;
+}
+
+.timeline-step:nth-child(6) .timeline-card {
+  animation-delay: 0.25s;
+}
+
+.timeline-step:nth-child(7) .timeline-card {
+  animation-delay: 0.3s;
+}
+
+.timeline-step:nth-child(8) .timeline-card {
+  animation-delay: 0.35s;
+}
+
+.timeline-step:nth-child(9) .timeline-card {
+  animation-delay: 0.4s;
+}
+
+.timeline-step:nth-child(10) .timeline-card {
+  animation-delay: 0.45s;
+}
+
+@keyframes journeyFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes floatSoft {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes driveAcross {
+  0% {
+    transform: translateX(0);
+  }
+
+  50% {
+    transform: translateX(18px);
+  }
+
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes popSoft {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.14);
+  }
+}
+
+/* -------------------------------------------------- */
+/* ORIGINAL PAGE CONTINUES */
+/* -------------------------------------------------- */
+
+.features-section {
+  background: var(--dark-green);
+  color: white;
+}
+
+.features-section .section-label {
+  color: var(--yellow);
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+
+.feature-card {
+  background: var(--cream);
+  color: var(--black);
+  padding: 28px;
+  border-radius: 18px;
+}
+
+.feature-card h3 {
+  margin-top: 0;
+  font-size: 1.35rem;
+}
+
+.feature-card p {
+  margin-bottom: 0;
+  line-height: 1.6;
+}
+
+.screenshots {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+  margin-top: 50px;
+}
+
+.screenshot-card {
+  text-align: center;
+}
+
+.screenshot-card img {
+  width: 100%;
+  height: 470px;
+  object-fit: contain;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+
+  filter: drop-shadow(0 16px 20px rgba(0, 0, 0, 0.15));
+}
+
+.screenshot-card p {
+  font-weight: 700;
+  margin-top: 18px;
+}
+
+.cta-section {
+  background: var(--yellow);
+  padding: 80px max(40px, calc((100vw - 1120px) / 2));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 30px;
+}
+
+footer {
+  padding: 30px 40px;
+  background: var(--black);
+  color: white;
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+}
+
+@media (max-width: 900px) {
+  .hero {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+
+  .hero-description {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .hero-buttons {
+    justify-content: center;
+  }
+
+  .steps,
+  .feature-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .screenshots {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .journey-labels {
+    gap: 35px;
+  }
+
+  .timeline-step {
+    grid-template-columns: 1fr 60px 1fr;
+  }
+
+  .buyer-step .timeline-card,
+  .organizer-step .timeline-card {
+    width: 100%;
+  }
+
+  .buyer-step .timeline-card::after {
+    right: -30px;
+    width: 30px;
+  }
+
+  .organizer-step .timeline-card::before {
+    left: -30px;
+    width: 30px;
+  }
+}
+
+@media (max-width: 600px) {
+  .navbar {
+    padding: 22px;
+  }
+
+  .nav-links {
+    display: none;
+  }
+
+  .hero,
+  .section {
+    padding-left: 22px;
+    padding-right: 22px;
+  }
+
+  .hero h1 {
+    font-size: 4rem;
+  }
+
+  .steps,
+  .feature-grid,
+  .screenshots {
+    grid-template-columns: 1fr;
+  }
+
+  /*
+    On phones, the zigzag becomes a single clean timeline.
+    This prevents the cards from becoming too narrow.
+  */
+  .journey-labels {
+    display: none;
+  }
+
+  .journey-timeline {
+    padding-left: 38px;
+  }
+
+  .timeline-line {
+    left: 12px;
+  }
+
+  .timeline-step {
+    display: block;
+    min-height: auto;
+    padding: 12px 0 26px;
+  }
+
+  .buyer-step .timeline-card,
+  .organizer-step .timeline-card {
+    width: 100%;
+    justify-self: auto;
+  }
+
+  .buyer-step .timeline-card::after,
+  .organizer-step .timeline-card::before {
+    left: -26px;
+    right: auto;
+    width: 26px;
+    top: 50%;
+  }
+
+  .timeline-node {
+    left: 12px;
+  }
+
+  .buyer-timeline-card {
+    border-top-color: var(--yellow);
+  }
+
+  .organizer-timeline-card {
+    border-top-color: var(--green);
+  }
+
+  .cta-section {
+    flex-direction: column;
+    align-items: flex-start;
+    padding-left: 22px;
+    padding-right: 22px;
+  }
+
+  footer {
+    flex-direction: column;
+    align-items: center;
+  }
+}
+
+.journey-section,
+.journey-section * {
+  font-family: Arial, Helvetica, sans-serif !important;
+}
+
+.mvp-section {
+  background: var(--black);
+  color: white;
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  align-items: center;
+  gap: 70px;
+  overflow: hidden;
+}
+
+.mvp-content {
+  max-width: 620px;
+}
+
+.mvp-content .section-label {
+  color: var(--yellow);
+}
+
+.mvp-content h2 {
+  color: white;
+}
+
+.mvp-content > p:not(.section-label):not(.mvp-note) {
+  color: #d6d6d6;
+  font-size: 1.15rem;
+  line-height: 1.7;
+  max-width: 570px;
+}
+
+.mvp-download-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 22px;
+  padding: 16px 26px;
+  border-radius: 999px;
+  background: var(--orange);
+  color: white;
+  font-family: "Outfit", sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.mvp-download-button span {
+  font-size: 1.2rem;
+}
+
+.mvp-download-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px rgba(232, 75, 44, 0.3);
+}
+
+.mvp-note {
+  margin-top: 15px;
+  color: #999;
+  font-size: 0.85rem;
+}
+
+.mvp-phone {
+  display: flex;
+  justify-content: center;
+}
+
+.mvp-phone img {
+  width: min(100%, 300px);
+  max-height: 520px;
+  object-fit: contain;
+  border-radius: 0;
+  box-shadow: none;
+  filter: drop-shadow(0 20px 28px rgba(0, 0, 0, 0.35));
+}
+
+@media (max-width: 900px) {
+  .mvp-section {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+
+  .mvp-content {
+    margin: auto;
+  }
+
+  .mvp-content > p:not(.section-label):not(.mvp-note) {
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
