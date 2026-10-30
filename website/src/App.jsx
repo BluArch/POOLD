@@ -363,7 +363,7 @@ function App() {
 
             <a
               className="mvp-download-button"
-              href="https://github.com/BluArch/POOLD/blob/main/Documentation/implementation/SETUP.md"
+              href="https://poold.onrender.com/"
               target="_blank"
               rel="noopener noreferrer"
             >
