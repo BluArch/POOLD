@@ -1,5 +1,7 @@
 # Run the POOLD MVP
 
+For cloud deployment, see [free hosting with Render and Aiven](HOSTING.md).
+
 The current implementation is in `apps/mobile` (Expo SDK 58 / React Native), `apps/api` (Node / Express), `packages/contracts` (shared schemas and types), and `db/migrations` (MySQL 8.4). No cloud account is required for local development. All prices are estimated product prices in CAD.
 
 ## Local setup

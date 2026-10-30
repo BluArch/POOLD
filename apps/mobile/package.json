@@ -9,6 +9,7 @@
     "ios": "expo start --ios --port 8081",
     "android": "expo start --android --port 8081",
     "export": "expo export --platform all",
+    "export:web": "EXPO_PUBLIC_API_URL=/api expo export --platform web",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

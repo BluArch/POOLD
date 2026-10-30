@@ -2,6 +2,8 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { rateLimit } from "express-rate-limit";
 import type { Pool } from "mysql2/promise";
 import { verificationSecret } from "./verification.js";
@@ -26,10 +28,19 @@ export function createApp(
       options.production ?? process.env.NODE_ENV === "production",
     demo = !production && (options.demo ?? process.env.DEMO_ENABLED === "true");
   const origin =
-    options.origin ?? process.env.APP_ORIGIN ?? "http://localhost:8081";
+    options.origin ??
+    process.env.APP_ORIGIN ??
+    process.env.RENDER_EXTERNAL_URL ??
+    "http://localhost:8081";
   const sendMail = options.sendMail ?? mailer(production);
   const app = express();
   app.disable("x-powered-by");
+  if (process.env.TRUST_PROXY_HOPS) {
+    const hops = Number(process.env.TRUST_PROXY_HOPS);
+    if (!Number.isInteger(hops) || hops < 1 || hops > 5)
+      throw new Error("TRUST_PROXY_HOPS must be an integer from 1 to 5.");
+    app.set("trust proxy", hops);
+  }
   app.use(helmet());
   app.use(cors({ origin, credentials: true }));
   app.use("/api", (req, res, next) => {
@@ -119,6 +130,20 @@ export function createApp(
       error: { code: "NOT_FOUND", message: "This endpoint does not exist." },
     }),
   );
+  if (process.env.STATIC_WEB_DIR) {
+    const webDir = resolve(process.env.STATIC_WEB_DIR);
+    const index = resolve(webDir, "index.html");
+    if (!existsSync(index))
+      throw new Error("Build the web app before setting STATIC_WEB_DIR.");
+    app.use(express.static(webDir, { index: false }));
+    app.get("/{*path}", (req, res, next) => {
+      // Missing assets must not return HTML in place of JavaScript or images.
+      if (req.path.startsWith("/_expo/") || req.path.startsWith("/assets/"))
+        return next();
+      res.setHeader("Cache-Control", "no-cache");
+      res.sendFile(index);
+    });
+  }
   app.use(errorHandler);
   return app;
 }

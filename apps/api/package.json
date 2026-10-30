@@ -11,6 +11,8 @@
     "jobs": "tsx --env-file=../../.env src/run-jobs.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
+    "migrate:host": "node dist/migrate.js",
+    "start:host": "node dist/index.js",
     "test": "tsx --env-file=../../.env --test --test-concurrency=1 test/*.test.ts",
     "mail:verify": "tsx --env-file=../../.env src/check-mail.ts"
   },
