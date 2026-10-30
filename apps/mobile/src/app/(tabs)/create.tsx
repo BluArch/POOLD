@@ -4,15 +4,12 @@ import { router, useLocalSearchParams } from "expo-router";
 import {
   type OrderInput,
   type OrderView,
-  type ItemInput,
   PICKUP_PLACES,
-  money,
 } from "@poold/contracts";
 import { api, post } from "../../api";
 import {
   Screen,
   Field,
-  CurrencyField,
   Button,
   Choice,
   Check,
@@ -20,25 +17,21 @@ import {
   ErrorText,
   useAction,
 } from "../../components/ui";
-const local = (h: number) => {
-  const d = new Date(Date.now() + h * 3600000);
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 16)
-    .replace("T", " ");
-};
-const item = (): ItemInput => ({
-  name: "",
-  category: "Pantry",
-  packLabel: "",
-  shareLabel: "",
-  sharesPerPack: 4,
-  packCount: 1,
-  priceCents: 0,
-  referenceShareCents: null,
-  storage: "",
-  portioning: "",
-});
+import { QuantityStepper } from "../../components/Sections";
+import { DateTimeField, Select, roundUp } from "../../components/Pickers";
+import {
+  ItemEditor,
+  type ItemDraft,
+  emptyDraft,
+  draftFromItem,
+  draftProblems,
+  draftToInput,
+} from "../../components/ItemEditor";
+
+const HOUR = 3600000;
+const later = (h: number) => roundUp(new Date(Date.now() + h * HOUR));
+const STORES = ["Costco", "Walmart", "Real Canadian Superstore"] as const;
+
 export default function Create() {
   const { id, quick } = useLocalSearchParams<{ id?: string; quick?: string }>(),
     a = useAction();
@@ -48,25 +41,19 @@ export default function Create() {
     [kind, setKind] = useState<"community" | "quick">(
       quick ? "quick" : "community",
     ),
-    [max, setMax] = useState("6"),
+    [max, setMax] = useState(6),
     [cadence, setCadence] = useState<"once" | "weekly" | "monthly">("once"),
-    [deadline, setDeadline] = useState(local(24)),
-    [purchase, setPurchase] = useState(local(26)),
-    [pickup, setPickup] = useState(local(28)),
-    [end, setEnd] = useState(local(30)),
+    [deadline, setDeadline] = useState(later(24)),
+    [purchase, setPurchase] = useState(later(26)),
+    [pickup, setPickup] = useState(later(28)),
+    [end, setEnd] = useState(later(30)),
     [location, setLocation] = useState(PICKUP_PLACES[0].name),
     [coords, setCoords] = useState<{ lat: number; lng: number } | null>(
       PICKUP_PLACES[0],
     ),
     [publicPickup, setPublic] = useState(true),
-    [items, setItems] = useState<ItemInput[]>([item()]);
-  const dateLocal = (s: string) => {
-    const d = new Date(s);
-    return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-      .toISOString()
-      .slice(0, 16)
-      .replace("T", " ");
-  };
+    [items, setItems] = useState<ItemDraft[]>([emptyDraft()]);
+
   useEffect(() => {
     if (id)
       void a.run(async () => {
@@ -76,241 +63,271 @@ export default function Create() {
         setStore(o.store);
         setVisibility(o.visibility);
         setKind(o.kind);
-        setMax(String(o.maxMembers));
+        setMax(o.maxMembers);
         setCadence(o.cadence);
-        setDeadline(dateLocal(o.deadline));
-        setPurchase(dateLocal(o.purchaseAt));
-        setPickup(dateLocal(o.pickupAt));
-        setEnd(dateLocal(o.pickupEnd));
+        setDeadline(new Date(o.deadline));
+        setPurchase(new Date(o.purchaseAt));
+        setPickup(new Date(o.pickupAt));
+        setEnd(new Date(o.pickupEnd));
         setLocation(o.pickupLocation);
         setCoords(
           o.pickupLat !== null ? { lat: o.pickupLat, lng: o.pickupLng! } : null,
         );
         setItems(
-          v.items.map((i) => ({
-            name: i.name,
-            category: i.category,
-            packLabel: i.packLabel,
-            shareLabel: i.shareLabel,
-            sharesPerPack: i.sharesPerPack,
-            packCount: i.packCount,
-            priceCents: i.priceCents,
-            referenceShareCents: i.referenceShareCents,
-            storage: i.storage,
-            portioning: i.portioning,
-          })),
+          v.items.map((i) =>
+            draftFromItem({
+              ...i,
+              referenceShareCents: i.referenceShareCents,
+            }),
+          ),
         );
       });
   }, [id]);
-  const update = (n: number, change: Partial<ItemInput>) =>
-    setItems(items.map((v, i) => (i === n ? { ...v, ...change } : v)));
+
+  // Keep the dates in order: changing an earlier date pushes later ones along.
+  const changeDeadline = (d: Date) => {
+    setDeadline(d);
+    if (purchase < d) {
+      const p = new Date(d.getTime() + 2 * HOUR);
+      setPurchase(p);
+      if (pickup < p) {
+        const s = new Date(p.getTime() + 2 * HOUR);
+        setPickup(s);
+        if (end <= s) setEnd(new Date(s.getTime() + 2 * HOUR));
+      }
+    }
+  };
+  const changePurchase = (d: Date) => {
+    setPurchase(d);
+    if (pickup < d) {
+      const s = new Date(d.getTime() + 2 * HOUR);
+      setPickup(s);
+      if (end <= s) setEnd(new Date(s.getTime() + 2 * HOUR));
+    }
+  };
+  const changePickup = (d: Date) => {
+    setPickup(d);
+    if (end <= d) setEnd(new Date(d.getTime() + 2 * HOUR));
+  };
+
+  const update = (n: number, d: ItemDraft) =>
+    setItems(items.map((v, i) => (i === n ? d : v)));
+  const problems = items.flatMap((d, n) =>
+    draftProblems(d).map((p) => `Item ${n + 1}: ${p}`),
+  );
+
   const save = () =>
     a.run(async () => {
-      const dates = [deadline, purchase, pickup, end].map(
-        (s) => new Date(s.replace(" ", "T")),
-      );
-      if (dates.some((d) => !Number.isFinite(d.getTime())))
-        throw new Error("Enter valid local dates as YYYY-MM-DD HH:mm.");
+      if (!name.trim()) throw new Error("Give the group a name.");
+      if (problems.length) throw new Error(problems.join(" "));
       const b: OrderInput = {
         name,
         store,
         kind,
         visibility,
-        maxMembers: Number(max),
+        maxMembers: max,
         cadence,
-        deadline: dates[0].toISOString(),
-        purchaseAt: dates[1].toISOString(),
-        pickupAt: dates[2].toISOString(),
-        pickupEnd: dates[3].toISOString(),
+        deadline: deadline.toISOString(),
+        purchaseAt: purchase.toISOString(),
+        pickupAt: pickup.toISOString(),
+        pickupEnd: end.toISOString(),
         pickupLocation: location,
         pickupLat: coords?.lat ?? null,
         pickupLng: coords?.lng ?? null,
         publicPickup: publicPickup as true,
-        items,
+        items: items.map(draftToInput),
       };
       let oid = id;
       if (id)
         await api(`/orders/${id}`, { method: "PUT", body: JSON.stringify(b) });
       else oid = (await post<{ id: string }>("/orders", b)).id;
-      router.replace({ pathname: "/(tabs)/order/[id]", params: { id: oid! } });
+      router.replace({
+        pathname: "/(tabs)/order/[id]",
+        params: { id: oid!, view: "organize" },
+      });
     });
+
   return (
     <Screen
       title={id ? "Edit your draft." : "A small shop, shared."}
       subtitle="Save a draft, review it, then publish."
       back
     >
-      <Field
-        label="Group name"
-        value={name}
-        onChangeText={setName}
-        placeholder="Campus pantry run"
-      />
-      <Field label="Store" value={store} onChangeText={setStore} />
-      <View style={[styles.row, { flexWrap: "wrap" }]}>
-        <Choice
-          label="Community order"
-          selected={kind === "community"}
-          onPress={() => setKind("community")}
-        />
-        <Choice
-          label="One-item quick split"
-          selected={kind === "quick"}
-          onPress={() => {
-            setKind("quick");
-            setItems(items.slice(0, 1));
-          }}
-        />
-      </View>
-      <View style={styles.row}>
-        <Choice
-          label="Public group"
-          selected={visibility === "public"}
-          onPress={() => setVisibility("public")}
-        />
-        <Choice
-          label="Private invite"
-          selected={visibility === "private"}
-          onPress={() => setVisibility("private")}
-        />
-      </View>
-      <Field
-        label="Maximum people (2–10, including you)"
-        keyboardType="number-pad"
-        value={max}
-        onChangeText={setMax}
-      />
       <View style={styles.section}>
-        <Text style={styles.h2}>When & where</Text>
-        <Text style={styles.muted}>
-          Times use your device’s local timezone. Format: YYYY-MM-DD HH:mm.
-        </Text>
+        <Text style={styles.h2}>The group</Text>
         <Field
-          label="Claim deadline"
-          value={deadline}
-          onChangeText={setDeadline}
+          label="Group name"
+          value={name}
+          onChangeText={setName}
+          placeholder="Campus pantry run"
         />
-        <Field
-          label="Purchase time"
-          value={purchase}
-          onChangeText={setPurchase}
+        <Select
+          label="Store"
+          value={store}
+          options={STORES}
+          onChange={setStore}
+          allowOther
         />
-        <Field label="Pickup starts" value={pickup} onChangeText={setPickup} />
-        <Field label="Pickup ends" value={end} onChangeText={setEnd} />
-        <Text style={styles.label}>Suggested public pickup places</Text>
-        {PICKUP_PLACES.map((p) => (
+        <View style={[styles.row, { flexWrap: "wrap", gap: 8 }]}>
           <Choice
-            key={p.name}
-            label={p.name}
-            selected={location === p.name}
+            label="Several items"
+            selected={kind === "community"}
+            onPress={() => setKind("community")}
+          />
+          <Choice
+            label="One-item quick split"
+            selected={kind === "quick"}
             onPress={() => {
-              setLocation(p.name);
-              setCoords(p);
+              setKind("quick");
+              setItems(items.slice(0, 1));
             }}
           />
-        ))}
+        </View>
+        <View style={[styles.row, { flexWrap: "wrap", gap: 8 }]}>
+          <Choice
+            label="Public group"
+            selected={visibility === "public"}
+            onPress={() => setVisibility("public")}
+          />
+          <Choice
+            label="Private (invite only)"
+            selected={visibility === "private"}
+            onPress={() => setVisibility("private")}
+          />
+        </View>
+        <View style={styles.between}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.label}>Maximum people</Text>
+            <Text style={styles.muted}>Including you, 2–10.</Text>
+          </View>
+          <QuantityStepper
+            label="people"
+            value={max}
+            max={10}
+            onChange={(n) => setMax(Math.max(2, n))}
+          />
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.h2}>When</Text>
+        <DateTimeField
+          label="Shares close"
+          value={deadline}
+          onChange={changeDeadline}
+          min={new Date()}
+          hint="Members can join and change shares until then."
+        />
+        <DateTimeField
+          label="You go shopping"
+          value={purchase}
+          onChange={changePurchase}
+          min={deadline}
+        />
+        <DateTimeField
+          label="Pickup starts"
+          value={pickup}
+          onChange={changePickup}
+          min={purchase}
+        />
+        <DateTimeField
+          label="Pickup ends"
+          value={end}
+          onChange={setEnd}
+          min={new Date(pickup.getTime() + 30 * 60000)}
+        />
+        <Text style={styles.label}>Repeats</Text>
+        <View style={[styles.row, { flexWrap: "wrap", gap: 8 }]}>
+          {(
+            [
+              ["once", "Just once"],
+              ["weekly", "Weekly"],
+              ["monthly", "Monthly"],
+            ] as const
+          ).map(([c, label]) => (
+            <Choice
+              key={c}
+              label={label}
+              selected={cadence === c}
+              onPress={() => setCadence(c)}
+            />
+          ))}
+        </View>
+        {cadence !== "once" && (
+          <Text style={styles.muted}>
+            You’ll create each repeat as a new draft from the finished group.
+          </Text>
+        )}
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.h2}>Where</Text>
+        <Text style={styles.label}>Public pickup place</Text>
+        <View style={{ gap: 8 }}>
+          {PICKUP_PLACES.map((p) => (
+            <Choice
+              key={p.name}
+              label={p.name}
+              selected={location === p.name}
+              onPress={() => {
+                setLocation(p.name);
+                setCoords(p);
+              }}
+            />
+          ))}
+        </View>
         <Field
-          label="Public pickup location"
-          value={location}
+          label="Or type another public place"
+          value={PICKUP_PLACES.some((p) => p.name === location) ? "" : location}
           onChangeText={(v) => {
             setLocation(v);
             setCoords(null);
           }}
+          placeholder="Clearihue Building entrance"
         />
         <Check
           label="This is a safe, public pickup place"
           value={publicPickup}
           onChange={setPublic}
         />
-        <Text style={styles.label}>Intended cadence</Text>
-        <View style={[styles.row, { flexWrap: "wrap" }]}>
-          {(["once", "weekly", "monthly"] as const).map((c) => (
-            <Choice
-              key={c}
-              label={c}
-              selected={cadence === c}
-              onPress={() => setCadence(c)}
-            />
-          ))}
-        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.h2}>Items</Text>
         <Text style={styles.muted}>
-          Repeating orders are created manually as new drafts.
+          Pick an item and how much goes in each share. The app works out the
+          number of shares and the price per share.
         </Text>
       </View>
-      {items.map((it, n) => (
-        <View key={n} style={styles.section}>
-          <Text style={styles.h2}>Item {n + 1}</Text>
-          <Field
-            label={`Item ${n + 1} name`}
-            value={it.name}
-            onChangeText={(name) => update(n, { name })}
-          />
-          <Field
-            label={`Item ${n + 1} category`}
-            value={it.category}
-            onChangeText={(category) => update(n, { category })}
-          />
-          <Field
-            label={`Item ${n + 1} pack size`}
-            placeholder="30 eggs"
-            value={it.packLabel}
-            onChangeText={(packLabel) => update(n, { packLabel })}
-          />
-          <Field
-            label={`Item ${n + 1} share size`}
-            placeholder="6 eggs"
-            value={it.shareLabel}
-            onChangeText={(shareLabel) => update(n, { shareLabel })}
-          />
-          <Field
-            label={`Item ${n + 1} shares per pack`}
-            keyboardType="number-pad"
-            value={String(it.sharesPerPack)}
-            onChangeText={(v) => update(n, { sharesPerPack: Number(v) })}
-          />
-          <Field
-            label={`Item ${n + 1} packs available`}
-            keyboardType="number-pad"
-            value={String(it.packCount)}
-            onChangeText={(v) => update(n, { packCount: Number(v) })}
-          />
-          <CurrencyField
-            label={`Item ${n + 1} pack price (CAD)`}
-            valueCents={it.priceCents}
-            onChangeCents={(c) => update(n, { priceCents: c ?? 0 })}
-          />
-          <Text style={styles.muted}>
-            {it.sharesPerPack > 0
-              ? `${money(Math.round(it.priceCents / it.sharesPerPack))} estimated per share`
-              : ""}
-          </Text>
-          <Field
-            label={`Item ${n + 1} storage advice`}
-            value={it.storage}
-            onChangeText={(storage) => update(n, { storage })}
-          />
-          <Field
-            label={`Item ${n + 1} portioning steps`}
-            value={it.portioning}
-            onChangeText={(portioning) => update(n, { portioning })}
-          />
-          <CurrencyField
-            label={`Item ${n + 1} comparable price per share (CAD, optional)`}
-            valueCents={it.referenceShareCents}
-            onChangeCents={(c) => update(n, { referenceShareCents: c })}
+      {items.map((d, n) => (
+        <View
+          key={n}
+          style={{
+            borderWidth: 1,
+            borderColor: "#d5dce4",
+            borderRadius: 12,
+            padding: 16,
+            gap: 12,
+          }}
+        >
+          <ItemEditor
+            title={items.length > 1 ? `Item ${n + 1}` : "Item"}
+            value={d}
+            onChange={(next) => update(n, next)}
           />
           {items.length > 1 && (
             <Button
               secondary
+              danger
               onPress={() => setItems(items.filter((_, i) => n !== i))}
             >
-              Remove item
+              Remove this item
             </Button>
           )}
         </View>
       ))}
       {kind === "community" && items.length < 30 && (
-        <Button secondary onPress={() => setItems([...items, item()])}>
+        <Button secondary onPress={() => setItems([...items, emptyDraft()])}>
           Add another item
         </Button>
       )}

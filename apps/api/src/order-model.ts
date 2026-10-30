@@ -123,6 +123,10 @@ export async function orderView(
       shareEstimateCents: estimate(i.price_cents, 1, i.shares_per_pack),
       requiredPacks: packs,
       shortfall: packs * i.shares_per_pack - claimed,
+      unit: i.unit ?? null,
+      packUnits: i.pack_units ?? null,
+      shareUnits: i.share_units ?? null,
+      catalogKey: i.catalog_key ?? null,
     };
   });
   const claimFor = (i: Item, quantity: number): Claim => ({
@@ -231,7 +235,7 @@ export async function insertItems(
   for (const i of items)
     await execute(
       db,
-      `INSERT INTO order_items(id,order_id,name,category,pack_label,share_label,shares_per_pack,pack_count,price_cents,original_price_cents,reference_share_cents,storage,portioning) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO order_items(id,order_id,name,category,pack_label,share_label,shares_per_pack,pack_count,price_cents,original_price_cents,reference_share_cents,storage,portioning,unit,pack_units,share_units,catalog_key) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         id(),
         oid,
@@ -246,6 +250,10 @@ export async function insertItems(
         i.referenceShareCents,
         i.storage,
         i.portioning,
+        i.unit ?? null,
+        i.packUnits ?? null,
+        i.shareUnits ?? null,
+        i.catalogKey ?? null,
       ],
     );
 }

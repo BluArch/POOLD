@@ -7,16 +7,22 @@ import { styles, C, when } from "./ui";
 export function OrderRow({
   order: o,
   showStatus = false,
+  organize = false,
 }: {
   order: OrderSummary;
   showStatus?: boolean;
+  /** Open the organizer tools instead of the buyer view. */
+  organize?: boolean;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`Open ${o.name}`}
       onPress={() =>
-        router.push({ pathname: "/(tabs)/order/[id]", params: { id: o.id } })
+        router.push({
+          pathname: "/(tabs)/order/[id]",
+          params: { id: o.id, ...(organize ? { view: "organize" } : {}) },
+        })
       }
       style={styles.section}
     >

@@ -1,8 +1,9 @@
 import { Router } from "express";
 import type { Pool } from "mysql2/promise";
-import { orderInput } from "@poold/contracts";
+import { orderInput, itemInput } from "@poold/contracts";
 import { z } from "zod";
-import { rows, execute, transaction } from "./db.js";
+import { rows, first, execute, transaction } from "./db.js";
+import { notify, notifyMembers } from "./notifications.js";
 import { verified } from "./auth.js";
 import { fail } from "./errors.js";
 import {
@@ -140,6 +141,70 @@ export function orders(db: Pool) {
       await insertItems(c, o.id, b.items);
     });
     res.json({ ok: true });
+  });
+  /** Add an item to a published group that is still collecting shares. */
+  r.post("/orders/:id/items", async (req, res) => {
+    const b = z
+      .object({ item: itemInput, requestId: z.string().uuid().optional() })
+      .parse(req.body);
+    await transaction(db, async (c) => {
+      const o = await getOrder(
+        c,
+        req.params.id as string,
+        req.user!.id,
+        undefined,
+        true,
+      );
+      owner(o, req.user!.id);
+      if (o.status === "draft")
+        fail(409, "IS_DRAFT", "Edit the draft to add items.");
+      if (o.status !== "open" || new Date(o.deadline).getTime() <= Date.now())
+        fail(
+          409,
+          "GROUP_CLOSED",
+          "Items can only be added while the group is collecting shares.",
+        );
+      if (o.kind === "quick")
+        fail(409, "QUICK_SPLIT", "A quick split has exactly one item.");
+      const count = await first(
+        c,
+        "SELECT COUNT(*) AS n FROM order_items WHERE order_id=?",
+        [o.id],
+      );
+      if (Number(count.n) >= 30)
+        fail(409, "TOO_MANY_ITEMS", "A group can have up to 30 items.");
+      await insertItems(c, o.id, [b.item]);
+      await execute(c, "UPDATE orders SET revision=revision+1 WHERE id=?", [
+        o.id,
+      ]);
+      if (b.requestId) {
+        const pr = await first(
+          c,
+          "SELECT * FROM product_requests WHERE id=? AND order_id=? FOR UPDATE",
+          [b.requestId, o.id],
+        );
+        if (!pr) fail(404, "NOT_FOUND", "Request not found.");
+        await execute(
+          c,
+          "UPDATE product_requests SET status='added' WHERE id=?",
+          [pr.id],
+        );
+        await notify(
+          c,
+          pr.creator_id,
+          o.id,
+          `${b.item.name} was added to ${o.name}. You can claim a share now.`,
+          `request-added:${pr.id}`,
+        );
+      }
+      await notifyMembers(
+        c,
+        o.id,
+        `${b.item.name} was added to ${o.name}.`,
+        `item-added:${o.id}:${b.item.name.toLowerCase()}`,
+      );
+    });
+    res.status(201).json({ ok: true });
   });
   r.post("/orders/:id/publish", async (req, res) => {
     await transaction(db, async (c) => {
