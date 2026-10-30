@@ -363,7 +363,7 @@ function App() {
 
             <a
               className="mvp-download-button"
-              href="YOUR_MVP_LINK_HERE"
+              href="https://github.com/BluArch/POOLD/blob/main/Documentation/implementation/SETUP.md"
               target="_blank"
               rel="noopener noreferrer"
             >
