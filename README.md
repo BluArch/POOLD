@@ -10,4 +10,4 @@ Live app: **[poold.onrender.com](https://poold.onrender.com)**. Hosted on [Rende
 
 # POOLD - Your Shares, Shared
 
-Check out our [product page](https://pooldtest.vercel.app/?_vercel_share=oIC72QgvkZlC5KPJt85RW5zGHPjKz3xg#mvp)!
+Check out our [product page](https://pooldtest.vercel.app/)!
