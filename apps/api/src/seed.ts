@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import type { Pool } from "mysql2/promise";
 import { insertDraft } from "./order-model.js";
+import { CATALOG, itemFromUnits, type ItemInput } from "@poold/contracts";
 import { database, execute, transaction, first } from "./db.js";
 import { passwordHash, token } from "./security.js";
 export async function seed(db: Pool) {
@@ -35,12 +36,62 @@ export async function seed(db: Pool) {
       "UPDATE users SET demo=FALSE WHERE id IN ('demo-jordan','demo-alex','demo-priya')",
     );
   });
-  for (const [name, store, who, kind] of [
-    ["Campus pantry run", "Costco", "maya", "community"],
-    ["Roommate restock", "Walmart", "jordan", "community"],
-    ["Saturday essentials", "Costco", "priya", "community"],
-    ["A tray of eggs", "Costco", "maya", "quick"],
-  ] as const) {
+  // Sample groups use sealed multipacks, so every share is clearly described
+  // ("1 share = 4 boxes") and nothing has to be opened to split it.
+  const pick = (key: string, shareUnits: number) => {
+    const c = CATALOG.find((x) => x.key === key)!;
+    return itemFromUnits({
+      ...c,
+      shareUnits,
+      packCount: 1,
+      catalogKey: c.key,
+    });
+  };
+  const samples: [
+    string,
+    string,
+    string,
+    "community" | "quick",
+    ItemInput[],
+  ][] = [
+    [
+      "Campus pantry run",
+      "Costco",
+      "maya",
+      "community",
+      [
+        pick("kd-24", 4),
+        pick("aylmer-tomatoes-8", 2),
+        pick("rice-krispies-54", 9),
+      ],
+    ],
+    [
+      "Roommate restock",
+      "Costco",
+      "jordan",
+      "community",
+      [
+        pick("ziploc-sandwich-4", 1),
+        pick("dove-16", 4),
+        pick("sensodyne-4", 1),
+      ],
+    ],
+    [
+      "Saturday essentials",
+      "Costco",
+      "priya",
+      "community",
+      [pick("sapporo-24", 6), pick("goldfish-24", 6), pick("coke-32", 8)],
+    ],
+    [
+      "Split a box of Clif bars",
+      "Costco",
+      "maya",
+      "quick",
+      [pick("clif-10", 5)],
+    ],
+  ];
+  for (const [name, store, who, kind, items] of samples) {
     if (
       await first(db, "SELECT id FROM orders WHERE name=? AND organizer_id=?", [
         name,
@@ -67,36 +118,7 @@ export async function seed(db: Pool) {
           pickupLng: -123.3089,
           publicPickup: true,
           cadence: "once",
-          items: [
-            {
-              name: "Eggs",
-              category: "Chilled",
-              packLabel: "30 eggs",
-              shareLabel: "6 eggs",
-              sharesPerPack: 5,
-              packCount: 1,
-              priceCents: 1299,
-              referenceShareCents: null,
-              storage: "Keep refrigerated. Bring a clean carton.",
-              portioning: "Pack 6 eggs in each labeled carton.",
-            },
-            ...(kind === "community"
-              ? [
-                  {
-                    name: "Jasmine rice",
-                    category: "Pantry",
-                    packLabel: "8 kg bag",
-                    shareLabel: "1 kg",
-                    sharesPerPack: 8,
-                    packCount: 1,
-                    priceCents: 2199,
-                    referenceShareCents: null,
-                    storage: "Store dry in a sealed container.",
-                    portioning: "Weigh 1 kg per share.",
-                  },
-                ]
-              : []),
-          ],
+          items,
         },
         `demo-${who}`,
       );

@@ -40,19 +40,13 @@ test("Phase D: lock, resolve shortfall, shop, pack, collect once, complete and r
       409,
     );
     await change({ bought: true });
-    assert.equal(
-      (
-        await call(
-          `/orders/${id}/pack`,
-          "POST",
-          { userId: "demo-jordan", packed: true },
-          t.maya,
-        )
-      ).status,
-      200,
-    );
+    // No separate packing step: "Done shopping" opens pickup directly.
     assert.equal((await status("ready")).status, 200);
     v = await view();
+    assert.equal(
+      v.members.find((m: any) => m.userId === "demo-jordan").packed,
+      true,
+    );
     assert.equal(v.collectionCode, undefined);
     assert.equal(
       v.members.find((m: any) => m.userId === "demo-jordan").collectionCode,
@@ -77,11 +71,20 @@ test("Phase D: lock, resolve shortfall, shop, pack, collect once, complete and r
       ).status,
       403,
     );
+    // A code typed into the wrong member's card is rejected and stays unused.
+    const wrongMember = await call(
+      `/orders/${id}/collect`,
+      "POST",
+      { code: member.collectionCode, userId: "demo-maya" },
+      t.maya,
+    );
+    assert.equal(wrongMember.status, 409);
+    assert.equal(wrongMember.body.error.code, "WRONG_MEMBER");
     const cs = await Promise.all([
       call(
         `/orders/${id}/collect`,
         "POST",
-        { code: member.collectionCode },
+        { code: member.collectionCode, userId: "demo-jordan" },
         t.maya,
       ),
       call(
