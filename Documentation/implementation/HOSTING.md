@@ -4,6 +4,16 @@ Selected October 29, 2026: **Render Free** for Express and the Expo web app, **A
 
 This preserves the current MySQL transactions and constraints. Firebase Functions requires the billing-enabled Blaze plan, and Firestore would require a database rewrite. Supabase uses PostgreSQL, requiring a migration. Vercel Hobby's daily cron limit does not fit the existing minute-based reminders. Koyeb's current signup/billing requirements make its free instance less straightforward for a new account.
 
+## Cloud setup progress — October 30, 2026
+
+- Aiven service `poold-mysql` exists on the **Free** tier, running MySQL 8.4.11 in DigitalOcean San Francisco.
+- Database `poold` has all three migrations applied. The `poold_app` user is restricted to that database and requires TLS. Certificate and hostname verification passed. No demo accounts or orders were seeded into `poold`.
+- All **17 API tests passed against a separate Aiven `poold_test` database**, including concurrent claims, membership capacity, transactions, verification, fulfillment and reminder idempotency. Test fixtures are confined to `poold_test`, which is not accessible to the production `poold_app` user.
+- The Render **Free** service form is prepared in the Poold workspace with branch `codex/render-aiven-hosting`, production configuration and database secrets. The service has not yet been submitted/deployed.
+- Brevo email identity verification passed. SMTP key creation is waiting on Brevo's required phone verification. A working sender and SMTP authentication still need verification before the app is deployed.
+
+Cloud account credentials are kept out of Git and documentation. Temporary local setup files are under ignored `.local/hosting` with private credential file permissions.
+
 ## Cost and limits
 
 | Component | Selected tier | Main limit |
