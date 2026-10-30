@@ -76,11 +76,13 @@ export function fulfillment(db: Pool) {
             "SHOPPING_INCOMPLETE",
             "Check off every required item before pickup.",
           );
-        if (members.some((m) => !m.packed))
-          fail(
-            409,
-            "PACKING_INCOMPLETE",
-            "Pack every required bag before pickup.",
+        // Items come in sealed units, so there is no separate packing step:
+        // once shopping is done, every member's share is ready to hand out.
+        for (const m of members)
+          await execute(
+            c,
+            "UPDATE memberships SET packed=TRUE WHERE order_id=? AND user_id=?",
+            [o.id, m.user_id],
           );
         for (const m of members) {
           const code = randomBytes(10).toString("hex").toUpperCase();
@@ -294,6 +296,13 @@ export function fulfillment(db: Pool) {
         .parse(req.body.code)
         .replace(/[\s-]/g, "")
         .toUpperCase();
+      // Optional: the member whose card the organizer typed the code into.
+      const forUser = z
+        .string()
+        .min(1)
+        .max(36)
+        .optional()
+        .parse(req.body.userId);
       await transaction(db, async (c) => {
         const o = await getOrder(
           c,
@@ -315,6 +324,12 @@ export function fulfillment(db: Pool) {
             409,
             "INVALID_COLLECTION",
             "This collection code is invalid or was already used.",
+          );
+        if (forUser && ct.user_id !== forUser)
+          fail(
+            409,
+            "WRONG_MEMBER",
+            "This code belongs to a different member. Check whose bag you’re handing out.",
           );
         const m = await first(
           c,
@@ -392,6 +407,10 @@ export function fulfillment(db: Pool) {
           referenceShareCents: i.reference_share_cents,
           storage: i.storage,
           portioning: i.portioning,
+          unit: i.unit,
+          packUnits: i.pack_units,
+          shareUnits: i.share_units,
+          catalogKey: i.catalog_key,
         })),
       });
       if (Date.parse(input.deadline) <= Date.now())

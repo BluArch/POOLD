@@ -31,6 +31,8 @@ export default function TabsLayout() {
     );
   return (
     <Tabs
+      // Back returns to the previous screen, not always the first tab.
+      backBehavior="history"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: C.ink,

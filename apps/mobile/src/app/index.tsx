@@ -26,6 +26,8 @@ export default function Home() {
     [passwordVisible, setPasswordVisible] = useState(false),
     [name, setName] = useState(""),
     [mode, setMode] = useState<"login" | "register">("login"),
+    // First screen for signed-out visitors: what POOLD is, before the form.
+    [welcome, setWelcome] = useState(true),
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
@@ -73,6 +75,18 @@ export default function Home() {
         }}
       />
     );
+  if (welcome && !s.error)
+    return (
+      <Welcome
+        invited={!!query.order}
+        onStart={(next) => {
+          setMode(next);
+          setError("");
+          setMessage("");
+          setWelcome(false);
+        }}
+      />
+    );
   return (
     <SafeAreaView style={styles.root}>
       <KeyboardAvoidingView
@@ -88,6 +102,14 @@ export default function Home() {
           <Text style={styles.muted}>
             Bulk groceries. Portions that fit your life.
           </Text>
+          <Pressable
+            accessibilityRole="button"
+            style={styles.backLink}
+            onPress={() => setWelcome(true)}
+          >
+            <Ionicons name="arrow-back-outline" size={18} color="#576780" />
+            <Text style={styles.muted}>What is POOLD?</Text>
+          </Pressable>
           {!!(error || s.error) && (
             <Text accessibilityRole="alert" style={styles.error}>
               {error || s.error}
@@ -218,6 +240,94 @@ export default function Home() {
     </SafeAreaView>
   );
 }
+const STEPS: {
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  title: string;
+  body: string;
+}[] = [
+  {
+    icon: "people-outline",
+    title: "Join a group",
+    body: "Find a group near campus that’s heading to a bulk store like Costco.",
+  },
+  {
+    icon: "pie-chart-outline",
+    title: "Take only your share",
+    body: "Claim just the part you want, like 2 cans from an 8-pack, at the bulk price.",
+  },
+  {
+    icon: "bag-check-outline",
+    title: "Pick it up on campus",
+    body: "Collect your bag at a public pickup spot with a one-time code.",
+  },
+];
+
+/** Short introduction shown before sign-in. */
+function Welcome({
+  invited,
+  onStart,
+}: {
+  invited: boolean;
+  onStart: (mode: "login" | "register") => void;
+}) {
+  return (
+    <SafeAreaView style={styles.root}>
+      <ScrollView contentContainerStyle={styles.content}>
+        <Text style={styles.brand}>poold</Text>
+        <Text style={styles.title}>Good things, shared.</Text>
+        <Text style={styles.lead}>
+          POOLD lets students split bulk groceries and household items, so you
+          get bulk prices without buying more than you need.
+        </Text>
+        {invited && (
+          <View style={styles.invite}>
+            <Ionicons name="mail-open-outline" size={20} color="#0f1b2a" />
+            <Text style={[styles.muted, { flex: 1, color: "#0f1b2a" }]}>
+              You’ve been invited to a group. Sign in or create an account to
+              see it.
+            </Text>
+          </View>
+        )}
+        <View style={styles.steps}>
+          {STEPS.map((step, i) => (
+            <View key={step.title} style={styles.step}>
+              <View style={styles.stepIcon}>
+                <Ionicons name={step.icon} size={22} color="#0f1b2a" />
+              </View>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={styles.stepTitle}>
+                  {i + 1}. {step.title}
+                </Text>
+                <Text style={styles.muted}>{step.body}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+        <View style={styles.organizer}>
+          <Ionicons name="storefront-outline" size={20} color="#576780" />
+          <Text style={[styles.muted, { flex: 1 }]}>
+            Going shopping anyway? Organize a group and POOLD keeps track of
+            shares, the shopping list and pickup for you.
+          </Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          style={styles.button}
+          onPress={() => onStart("register")}
+        >
+          <Text style={styles.buttonText}>Get started</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          style={styles.secondaryButton}
+          onPress={() => onStart("login")}
+        >
+          <Text style={styles.secondaryText}>I already have an account</Text>
+        </Pressable>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#fff" },
   content: {
@@ -270,4 +380,48 @@ const styles = StyleSheet.create({
   buttonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
   link: { paddingVertical: 14, minHeight: 48 },
   error: { color: "#a22222", lineHeight: 22 },
+  lead: { color: "#2b3a4d", fontSize: 18, lineHeight: 27 },
+  steps: { gap: 18, marginTop: 16, marginBottom: 4 },
+  step: { flexDirection: "row", gap: 14, alignItems: "flex-start" },
+  stepIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#f4f6f8",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepTitle: { fontSize: 17, fontWeight: "600", color: "#0f1b2a" },
+  organizer: {
+    flexDirection: "row",
+    gap: 12,
+    alignItems: "flex-start",
+    borderTopWidth: 1,
+    borderTopColor: "#d5dce4",
+    paddingTop: 16,
+    marginBottom: 12,
+  },
+  invite: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "flex-start",
+    backgroundColor: "#f4f6f8",
+    padding: 14,
+    borderRadius: 8,
+  },
+  secondaryButton: {
+    borderWidth: 1,
+    borderColor: "#cbd2da",
+    padding: 16,
+    borderRadius: 8,
+    minHeight: 50,
+    alignItems: "center",
+  },
+  secondaryText: { color: "#0f1b2a", fontWeight: "600", fontSize: 16 },
+  backLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    minHeight: 44,
+  },
 });
