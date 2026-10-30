@@ -20,7 +20,7 @@ These are currently $0 tiers within their limits, suited to the course MVP/demo.
 
 1. Sign in to Render and Aiven. Create an Aiven **MySQL Free** service; avoid trial/paid plans. Use a fresh database, without local development accounts. Copy the MySQL URI and download the project CA certificate. Use a dedicated application database/user when available; the deployment user needs the schema permissions required by the migrations.
 2. Create a Brevo Free account, verify the sender, and activate transactional email. Copy its SMTP login and **SMTP key**. Render Free blocks ports 25, 465 and 587; the Blueprint selects Brevo's **2525**, with mandatory STARTTLS in POOLD's mailer. Verify connection/authentication and actual recipient delivery after deployment. Never configure unencrypted SMTP.
-3. Make the hosting changes available in the deployment Git revision. Create a Render Blueprint from POOLD and `render.yaml`. Keep the service on **Free**. Automatic deploys are disabled; deploy reviewed revisions manually.
+3. The hosting changes are on GitHub branch `codex/render-aiven-hosting`. Create a Render Blueprint from POOLD, that branch, and `render.yaml`. Keep the service on **Free**. Automatic deploys are disabled; deploy reviewed revisions manually. Alternatively, a manually configured web service must use that branch, repository-root working directory, the build/start commands below, and `/api/health` as its health check.
 4. Supply the private server variables when prompted:
 
    | Variable | Value |
