@@ -4,6 +4,8 @@ The Expo / React Native app, Node API and MySQL implementation are now in this r
 
 Local preview: `npm run dev` after setup.
 
+Cloud deployment: [Render Free + Aiven MySQL Free](Documentation/implementation/HOSTING.md), with a prepared `render.yaml`. Account setup and live deployment verification are still required.
+
 ---
 
 # POOLD - Your Shares, Shared

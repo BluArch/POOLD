@@ -19,6 +19,8 @@
     "lint": "eslint apps packages",
     "test": "npm run test -w @poold/api",
     "build": "npm run build -w @poold/contracts && npm run build -w @poold/api && npm run export -w @poold/mobile",
+    "build:host": "npm run build -w @poold/contracts && npm run build -w @poold/api && npm run export:web -w @poold/mobile",
+    "start:host": "npm run migrate:host -w @poold/api && npm run start:host -w @poold/api",
     "prepare": "npm run build -w @poold/contracts"
   },
   "devDependencies": {
