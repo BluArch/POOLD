@@ -1,7 +1,9 @@
 import React, { useState } from "react";
 import { View, Text, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { C, styles } from "./ui";
+import { styles } from "./ui";
+import { palette as P, type } from "../theme";
+import { Chip, ChipRow, ShareBar } from "./Market";
 
 /** A card that expands and collapses, so long screens stay easy to scan. */
 export function Collapsible({
@@ -29,9 +31,9 @@ export function Collapsible({
     <View
       style={{
         borderWidth: 1,
-        borderColor: C.line,
+        borderColor: P.line,
         borderRadius: 10,
-        backgroundColor: "#fff",
+        backgroundColor: P.paper,
       }}
     >
       <Pressable
@@ -50,13 +52,13 @@ export function Collapsible({
         })}
       >
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={styles.h3}>{title}</Text>
-          {!!summary && <Text style={styles.muted}>{summary}</Text>}
+          <Text style={type.section}>{title}</Text>
+          {!!summary && <Text style={type.mono}>{summary}</Text>}
         </View>
         <Ionicons
           name={open ? "chevron-up" : "chevron-down"}
           size={22}
-          color={C.muted}
+          color={P.muted}
         />
       </Pressable>
       {open && (
@@ -66,7 +68,7 @@ export function Collapsible({
             paddingBottom: 16,
             gap: 12,
             borderTopWidth: 1,
-            borderTopColor: C.line,
+            borderTopColor: P.line,
             paddingTop: 14,
           }}
         >
@@ -102,19 +104,34 @@ export function QuantityStepper({
       accessibilityLabel={a11y}
       accessibilityState={{ disabled: off }}
       disabled={off}
+      hitSlop={2}
       onPress={() => onChange(next)}
       style={({ pressed }) => ({
         width: 44,
         height: 44,
-        borderRadius: 22,
-        borderWidth: 1,
-        borderColor: C.line,
         alignItems: "center",
         justifyContent: "center",
         opacity: off ? 0.35 : pressed ? 0.6 : 1,
       })}
     >
-      <Ionicons name={icon} size={20} color={C.ink} />
+      <View
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          borderWidth: 1.5,
+          borderColor: P.lineStrong,
+          backgroundColor: icon === "add" ? P.chalk : P.paper,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Ionicons
+          name={icon}
+          size={20}
+          color={icon === "add" ? P.chalkText : P.ink}
+        />
+      </View>
     </Pressable>
   );
   return (
@@ -148,27 +165,7 @@ export function ProgressBar({
   value: number;
   total: number;
 }) {
-  const pct = total > 0 ? Math.min(1, value / total) : 0;
-  return (
-    <View
-      accessibilityRole="progressbar"
-      accessibilityValue={{ min: 0, max: total, now: value }}
-      style={{
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: C.soft,
-        overflow: "hidden",
-      }}
-    >
-      <View
-        style={{
-          width: `${pct * 100}%`,
-          height: "100%",
-          backgroundColor: C.ink,
-        }}
-      />
-    </View>
-  );
+  return <ShareBar others={value} yours={0} total={total} />;
 }
 
 /** Two-option switch, e.g. "Organize" vs "My share". */
@@ -182,53 +179,21 @@ export function Segmented<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <View
-      accessibilityRole="tablist"
-      style={{
-        flexDirection: "row",
-        backgroundColor: C.soft,
-        borderRadius: 9,
-        padding: 4,
-        gap: 4,
-      }}
-    >
-      {options.map((o) => {
-        const selected = o.value === value;
-        return (
-          <Pressable
-            key={o.value}
-            accessibilityRole="tab"
-            accessibilityState={{ selected }}
-            onPress={() => onChange(o.value)}
-            style={{
-              flex: 1,
-              minHeight: 42,
-              borderRadius: 7,
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: selected ? "#fff" : "transparent",
-              borderWidth: selected ? 1 : 0,
-              borderColor: C.line,
-            }}
-          >
-            <Text
-              style={{
-                fontSize: 15,
-                fontWeight: selected ? "600" : "400",
-                color: selected ? C.ink : C.muted,
-              }}
-            >
-              {o.label}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
+    <ChipRow>
+      {options.map((o) => (
+        <Chip
+          key={o.value}
+          label={o.label}
+          selected={o.value === value}
+          onPress={() => onChange(o.value)}
+        />
+      ))}
+    </ChipRow>
   );
 }
 
-/** Numbered progress across the organizer's steps. Reached steps can be revisited. */
-export function StepTracker({
+/** Earlier work is reached through explicit links, never through the status bars. */
+export function SummaryLinks({
   steps,
   current,
   viewing,
@@ -240,58 +205,31 @@ export function StepTracker({
   onSelect: (i: number) => void;
 }) {
   return (
-    <View style={{ flexDirection: "row", gap: 6 }}>
-      {steps.map((label, i) => {
-        const done = i < current,
-          active = i === viewing,
-          reachable = i <= current;
-        return (
+    <View style={{ gap: 4 }}>
+      {steps.map((label, i) =>
+        i <= Math.min(current, steps.length - 1) && i !== viewing ? (
           <Pressable
             key={label}
-            accessibilityRole="tab"
-            accessibilityLabel={`Step ${i + 1}: ${label}${done ? ", done" : i === current ? ", current" : ""}`}
-            accessibilityState={{ selected: active, disabled: !reachable }}
-            disabled={!reachable}
+            accessibilityRole="link"
             onPress={() => onSelect(i)}
-            style={{ flex: 1, gap: 6, opacity: reachable ? 1 : 0.45 }}
+            style={{ minHeight: 44, justifyContent: "center" }}
           >
-            <View
-              style={{
-                height: 4,
-                borderRadius: 2,
-                backgroundColor: i <= current ? C.ink : C.line,
-              }}
-            />
-            <View style={[styles.row, { gap: 5 }]}>
-              {done ? (
-                <Ionicons name="checkmark-circle" size={16} color={C.ink} />
-              ) : (
-                <Text
-                  style={{
-                    fontSize: 12,
-                    fontWeight: "700",
-                    color: active ? C.ink : C.muted,
-                  }}
-                >
-                  {i + 1}
-                </Text>
-              )}
-              <Text
-                numberOfLines={1}
-                style={{
-                  flex: 1,
-                  fontSize: 12,
-                  fontWeight: active ? "700" : "500",
-                  color: active ? C.ink : C.muted,
-                  textDecorationLine: active ? "underline" : "none",
-                }}
-              >
-                {label}
-              </Text>
-            </View>
+            <Text
+              style={[
+                styles.text,
+                { color: P.herbText, textDecorationLine: "underline" },
+              ]}
+            >
+              {i === Math.min(current, steps.length - 1)
+                ? `Back to ${label.toLowerCase()}`
+                : `See ${label.toLowerCase()} summary`}
+            </Text>
           </Pressable>
-        );
-      })}
+        ) : null,
+      )}
     </View>
   );
 }
+
+/** Compatibility for organizer consumers migrated in a subsequent commit. */
+export { SummaryLinks as StepTracker };
