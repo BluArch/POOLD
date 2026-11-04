@@ -11,31 +11,22 @@ import {
   ActivityIndicator,
   RefreshControl,
   type TextInputProps,
+  type StyleProp,
+  type TextStyle,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "../api";
-export const C = {
-  ink: "#101c2b",
-  muted: "#586a81",
-  line: "#d5dce4",
-  blue: "#245a89",
-  red: "#a12626",
-  soft: "#f4f6f8",
-};
+import { palette as P, fonts, type, shape, spacing } from "../theme";
+/** Compatibility for screens migrated in subsequent commits. */
+export const C = { ...P, blue: P.herbText, red: P.beet, soft: P.paper };
 export const styles = StyleSheet.create({
-  title: {
-    fontSize: 30,
-    fontWeight: "700",
-    color: C.ink,
-    letterSpacing: -0.8,
-    lineHeight: 37,
-  },
-  h2: { fontSize: 22, fontWeight: "600", color: C.ink, letterSpacing: -0.4 },
-  h3: { fontSize: 18, fontWeight: "600", color: C.ink },
-  text: { fontSize: 16, color: C.ink, lineHeight: 24 },
-  muted: { fontSize: 15, color: C.muted, lineHeight: 23 },
+  title: type.title,
+  h2: type.section,
+  h3: type.item,
+  text: type.body,
+  muted: { ...type.body, color: P.muted },
   row: { flexDirection: "row", alignItems: "center", gap: 12 },
   between: {
     flexDirection: "row",
@@ -44,32 +35,46 @@ export const styles = StyleSheet.create({
     gap: 8,
   },
   section: {
-    paddingVertical: 22,
-    borderTopWidth: 1,
-    borderTopColor: C.line,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: P.line,
+    borderRadius: shape.card,
+    backgroundColor: P.paper,
     gap: 10,
   },
   input: {
-    borderWidth: 1,
-    borderColor: C.line,
-    borderRadius: 7,
+    ...type.body,
+    borderWidth: 1.5,
+    borderColor: P.line,
+    borderRadius: shape.input,
     padding: 13,
     minHeight: 48,
-    fontSize: 16,
-    color: C.ink,
-    backgroundColor: "#fff",
+    backgroundColor: P.paper,
   },
-  error: { color: C.red, fontSize: 15, lineHeight: 23 },
-  label: { fontSize: 14, fontWeight: "600", color: C.ink },
-  pill: {
-    color: C.muted,
-    fontSize: 12,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
+  error: { ...type.body, color: P.beet },
+  label: type.label,
+  pill: { ...type.mono, textTransform: "uppercase" },
+  note: {
+    backgroundColor: P.paper,
+    padding: 16,
+    borderRadius: shape.card,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: P.line,
   },
-  note: { backgroundColor: C.soft, padding: 16, borderRadius: 8, gap: 8 },
 });
+const FooterContext = React.createContext<(node: React.ReactNode) => void>(
+  () => {},
+);
+/** Place a child-owned action in Screen's fixed footer, above navigation. */
+export function ScreenFooter({ children }: { children: React.ReactNode }) {
+  const setFooter = React.useContext(FooterContext);
+  useEffect(() => {
+    setFooter(children);
+    return () => setFooter(null);
+  }, [children, setFooter]);
+  return null;
+}
 export function Screen({
   title,
   subtitle,
@@ -77,6 +82,10 @@ export function Screen({
   back = false,
   refreshing = false,
   onRefresh,
+  header,
+  stamp,
+  footer,
+  titleStyle,
 }: {
   title: string;
   subtitle?: string;
@@ -84,80 +93,120 @@ export function Screen({
   back?: boolean;
   refreshing?: boolean;
   onRefresh?: () => void;
+  header?: React.ReactNode;
+  stamp?: React.ReactNode;
+  footer?: React.ReactNode;
+  titleStyle?: StyleProp<TextStyle>;
 }) {
+  const [childFooter, setChildFooter] = useState<React.ReactNode>(null);
   return (
-    <SafeAreaView
-      edges={["top", "left", "right"]}
-      style={{ flex: 1, backgroundColor: "#fff" }}
-    >
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+    <FooterContext.Provider value={setChildFooter}>
+      <SafeAreaView
+        edges={["top", "left", "right"]}
+        style={{ flex: 1, backgroundColor: back ? P.kraft : P.chalk }}
       >
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{
-            paddingHorizontal: 24,
-            paddingTop: 12,
-            paddingBottom: 40,
-            gap: 20,
-            width: "100%",
-            maxWidth: 640,
-            alignSelf: "center",
-          }}
-          refreshControl={
-            onRefresh ? (
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-            ) : undefined
-          }
+        <KeyboardAvoidingView
+          style={{ flex: 1, backgroundColor: P.kraft }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
-          <View style={styles.between}>
-            <View style={styles.row}>
-              {back && (
-                <IconButton
-                  name="arrow-back-outline"
-                  label="Back"
-                  onPress={() =>
-                    router.canGoBack()
-                      ? router.back()
-                      : router.replace("/(tabs)/community")
-                  }
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingBottom: 28 }}
+            refreshControl={
+              onRefresh ? (
+                <RefreshControl
+                  tintColor={P.herb}
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
                 />
-              )}
-              <Text
+              ) : undefined
+            }
+          >
+            <View style={{ backgroundColor: back ? P.kraft : P.chalk }}>
+              <View
                 style={{
-                  fontSize: 27,
-                  fontWeight: "700",
-                  letterSpacing: -1,
-                  color: C.ink,
+                  width: "100%",
+                  maxWidth: spacing.maxWidth,
+                  alignSelf: "center",
+                  padding: spacing.page,
+                  gap: 14,
                 }}
               >
-                poold
-              </Text>
+                <View style={styles.between}>
+                  {back ? (
+                    <IconButton
+                      name="arrow-back-outline"
+                      label="Back"
+                      onPress={() =>
+                        router.canGoBack()
+                          ? router.back()
+                          : router.replace("/(tabs)/community")
+                      }
+                    />
+                  ) : (
+                    <Text
+                      style={{
+                        fontFamily: fonts.italic,
+                        fontSize: 24,
+                        color: P.chalkText,
+                      }}
+                    >
+                      poold
+                    </Text>
+                  )}
+                  {stamp}
+                </View>
+                <View style={{ gap: 8 }}>
+                  {back && !!subtitle && (
+                    <Text style={type.mono}>{subtitle.toUpperCase()}</Text>
+                  )}
+                  <Text
+                    accessibilityRole="header"
+                    style={[
+                      back ? type.detailTitle : type.title,
+                      { color: back ? P.ink : P.chalkText },
+                      titleStyle,
+                    ]}
+                  >
+                    {title}
+                  </Text>
+                  {!back && !!subtitle && (
+                    <Text style={[type.mono, { color: P.chalkMuted }]}>
+                      {subtitle.toUpperCase()}
+                    </Text>
+                  )}
+                </View>
+                {header}
+              </View>
             </View>
-            <View style={styles.row}>
-              <IconButton
-                name="notifications-outline"
-                label="Updates"
-                onPress={() => router.push("/(tabs)/updates")}
-              />
-              <IconButton
-                name="person-outline"
-                label="Account"
-                onPress={() => router.push("/(tabs)/account")}
-              />
+            <View
+              style={{
+                width: "100%",
+                maxWidth: spacing.maxWidth,
+                alignSelf: "center",
+                padding: spacing.page,
+                gap: spacing.section,
+              }}
+            >
+              {children}
             </View>
-          </View>
-          <View style={{ gap: 8, marginTop: 14 }}>
-            <Text accessibilityRole="header" style={styles.title}>
-              {title}
-            </Text>
-            {!!subtitle && <Text style={styles.muted}>{subtitle}</Text>}
-          </View>
-          {children}
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+          </ScrollView>
+          {(footer || childFooter) && (
+            <View
+              style={{
+                paddingHorizontal: 12,
+                paddingBottom: 8,
+                width: "100%",
+                maxWidth: spacing.maxWidth,
+                alignSelf: "center",
+              }}
+            >
+              {footer || childFooter}
+            </View>
+          )}
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </FooterContext.Provider>
   );
 }
 export function IconButton({
@@ -179,10 +228,14 @@ export function IconButton({
         minHeight: 44,
         alignItems: "center",
         justifyContent: "center",
-        opacity: pressed ? 0.5 : 1,
+        opacity: pressed ? 0.7 : 1,
+        borderRadius: 22,
+        backgroundColor: P.paper,
+        borderWidth: 1,
+        borderColor: P.line,
       })}
     >
-      <Ionicons name={name} size={25} color={C.muted} />
+      <Ionicons name={name} size={25} color={P.chalk} />
     </Pressable>
   );
 }
@@ -192,13 +245,32 @@ export function Button({
   secondary = false,
   disabled = false,
   danger = false,
+  variant,
 }: {
   children: string;
   onPress: () => void;
   secondary?: boolean;
   disabled?: boolean;
   danger?: boolean;
+  variant?: "primary" | "secondary" | "outline" | "danger";
 }) {
+  const v = variant ?? (secondary ? "outline" : danger ? "danger" : "primary");
+  const background =
+    v === "primary"
+      ? P.carrot
+      : v === "secondary"
+        ? P.chalk
+        : v === "danger"
+          ? P.beet
+          : P.paper;
+  const color =
+    v === "secondary" || v === "danger"
+      ? P.chalkText
+      : danger
+        ? P.beet
+        : v === "primary"
+          ? P.actionInk
+          : P.ink;
   return (
     <Pressable
       accessibilityRole="button"
@@ -206,22 +278,38 @@ export function Button({
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => ({
-        padding: 14,
-        minHeight: 48,
-        borderRadius: 7,
-        borderWidth: secondary ? 1 : 0,
-        borderColor: C.line,
+        minHeight: 50,
+        paddingVertical: 13,
+        paddingHorizontal: 20,
+        ...(v === "primary" ? shape.tag : { borderRadius: 26 }),
+        borderWidth: v === "outline" ? 1.5 : 0,
+        borderColor: P.lineStrong,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: secondary ? "#fff" : danger ? C.red : C.ink,
+        backgroundColor: background,
         opacity: disabled ? 0.4 : pressed ? 0.7 : 1,
       })}
     >
+      {v === "primary" && (
+        <View
+          accessible={false}
+          style={{
+            position: "absolute",
+            left: 9,
+            width: 6,
+            height: 6,
+            borderRadius: 3,
+            backgroundColor: P.paper,
+          }}
+        />
+      )}
       <Text
         style={{
+          fontFamily: fonts.bold,
           fontSize: 15,
-          fontWeight: "600",
-          color: secondary ? (danger ? C.red : C.ink) : "#fff",
+          lineHeight: 22,
+          color,
+          textAlign: "center",
         }}
       >
         {children}
@@ -230,18 +318,28 @@ export function Button({
   );
 }
 export function Field({ label, ...props }: TextInputProps & { label: string }) {
+  const [focused, setFocused] = useState(false);
   return (
     <View style={{ gap: 7 }}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
         {...props}
         accessibilityLabel={label}
+        onFocus={(e) => {
+          setFocused(true);
+          props.onFocus?.(e);
+        }}
+        onBlur={(e) => {
+          setFocused(false);
+          props.onBlur?.(e);
+        }}
         style={[
           styles.input,
+          { borderColor: focused ? P.chalk : P.line },
           props.multiline ? { minHeight: 90, textAlignVertical: "top" } : null,
           props.style,
         ]}
-        placeholderTextColor="#68788b"
+        placeholderTextColor={P.muted}
       />
     </View>
   );
@@ -259,21 +357,23 @@ export function Choice({
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected }}
+      aria-pressed={selected}
       onPress={onPress}
       style={{
         minHeight: 44,
         paddingVertical: 11,
         paddingHorizontal: 14,
         borderWidth: 1,
-        borderColor: selected ? C.ink : C.line,
-        borderRadius: 7,
-        backgroundColor: selected ? C.soft : "#fff",
+        borderColor: selected ? P.ink : P.line,
+        borderRadius: 10,
+        backgroundColor: selected ? P.chalk : P.paper,
       }}
     >
       <Text
         style={{
           fontSize: 14,
-          color: selected ? C.ink : C.muted,
+          fontFamily: fonts.label,
+          color: selected ? P.chalkText : P.muted,
           fontWeight: selected ? "600" : "400",
         }}
       >
@@ -311,7 +411,7 @@ export function Check({
       <Ionicons
         name={value ? "checkbox" : "square-outline"}
         size={24}
-        color={disabled ? C.muted : C.ink}
+        color={disabled ? P.muted : P.ink}
       />
       <Text style={[styles.text, { flex: 1 }]}>{label}</Text>
     </Pressable>
@@ -328,7 +428,7 @@ export function Loading() {
   return (
     <ActivityIndicator
       accessibilityLabel="Loading"
-      color={C.ink}
+      color={P.herb}
       style={{ padding: 30 }}
     />
   );
@@ -358,6 +458,35 @@ export function useResource<T>(path: string) {
   );
   return { data, loading, error, refresh, setData };
 }
+export function EmptyState({
+  title,
+  message,
+  children,
+}: {
+  title: string;
+  message: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <View style={styles.note}>
+      <View
+        style={{
+          width: 48,
+          height: 48,
+          borderRadius: 12,
+          backgroundColor: P.track,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Ionicons name="basket-outline" size={26} color={P.chalk} />
+      </View>
+      <Text style={styles.h3}>{title}</Text>
+      <Text style={styles.muted}>{message}</Text>
+      {children}
+    </View>
+  );
+}
 export function ResourceState({
   resource,
 }: {
@@ -365,12 +494,23 @@ export function ResourceState({
 }) {
   return (
     <>
-      {resource.loading && <Loading />}
-      <ErrorText message={resource.error} />
+      {resource.loading && (
+        <View style={styles.note}>
+          <Loading />
+          <Text style={styles.h3}>Getting things ready</Text>
+          <Text style={styles.muted}>
+            Your group details will be here shortly.
+          </Text>
+        </View>
+      )}
       {!!resource.error && (
-        <Button secondary onPress={() => void resource.refresh()}>
-          Retry
-        </Button>
+        <View style={styles.note}>
+          <Text style={styles.h3}>Couldn’t load this</Text>
+          <ErrorText message={resource.error} />
+          <Button secondary onPress={() => void resource.refresh()}>
+            Retry
+          </Button>
+        </View>
       )}
     </>
   );
