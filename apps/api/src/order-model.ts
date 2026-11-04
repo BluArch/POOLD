@@ -64,6 +64,11 @@ export async function summary(
     `SELECT (SELECT COUNT(*) FROM memberships WHERE order_id=?) AS member_count,(SELECT name FROM users WHERE id=?) AS organizer_name,EXISTS(SELECT 1 FROM memberships WHERE order_id=? AND user_id=?) AS joined,(SELECT GROUP_CONCAT(name ORDER BY name SEPARATOR ' · ') FROM order_items WHERE order_id=? AND available=TRUE) AS preview`,
     [o.id, o.organizer_id, o.id, uid, o.id],
   );
+  const previews = await rows(
+    db,
+    `SELECT name,category,price_cents,shares_per_pack,unit FROM order_items WHERE order_id=? AND available=TRUE ORDER BY name,id LIMIT 4`,
+    [o.id],
+  );
   return {
     id: o.id,
     name: o.name,
@@ -84,6 +89,13 @@ export async function summary(
     organizerId: o.organizer_id,
     joined: !!stats.joined,
     preview: stats.preview ?? "",
+    previewItems: previews.map((i) => ({
+      name: i.name,
+      category: i.category,
+      priceCents: i.price_cents,
+      sharesPerPack: i.shares_per_pack,
+      unit: i.unit ?? null,
+    })),
     cadence: o.cadence,
     revision: o.revision,
   };
