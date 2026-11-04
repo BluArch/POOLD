@@ -22,9 +22,11 @@ npm run dev
 
 Alternatively, use `docker compose up -d --wait` in place of `npm run db:local`. The compose file binds MySQL to loopback on the same port and initializes both databases. Do not run both options together. To stop without deleting data: `docker compose stop`.
 
+After pulling changes, run `npm run db:migrate` before restarting the app so the local schema includes every checked-in migration. `/api/health` checks database connectivity, not schema compatibility.
+
 Open [the Expo web preview](http://localhost:8081). The API health route is [here](http://localhost:4000/api/health). Development sign-in offers one explicitly labeled sample account: **Maya**. Other sample organizers are retained as order data only; they cannot use the demo sign-in endpoint. Re-seeding retires their old demo sessions while preserving order history. Seeded orders contain no fake claims; all counts come from database rows. Restarting the API preserves accounts, orders, claims, updates, and sessions. Re-running seed does not reset orders.
 
-The UI follows Community / My Orders / Organize, with contextual access to requests, account, updates, private invites, claims, and organizer tools. Drafts need review and publication. A quick split has exactly one item. Group capacity includes the organizer, defaults to 6 and cannot exceed 10.
+The Market Receipt UI uses Discover / My groups / Start / Updates / Profile. My groups merges joined and organized groups with Upcoming, Organizing, and Past filters. Start opens a sheet to organize a group order or join with a private invite. Product suggestions live inside an open group and are associated with that group order. Existing order, claim, invite, and organize links continue to work. Drafts need review and publication. Quick-split creation is not offered; new orders are standard group orders. Group capacity includes the organizer, defaults to 6 and cannot exceed 10.
 
 ## Verification and email
 
