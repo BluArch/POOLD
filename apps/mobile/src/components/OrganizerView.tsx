@@ -10,7 +10,6 @@ import {
   type ProductRequest,
   money,
   describeShare,
-  claimText,
 } from "@poold/contracts";
 import { api, post } from "../api";
 import {
@@ -23,8 +22,10 @@ import {
   useAction,
   useResource,
   when,
-  C,
 } from "./ui";
+import { ItemIcon } from "./ItemIcon";
+import { ReceiptLine } from "./Receipt";
+import { palette as P, type } from "../theme";
 import { RequestCard } from "./RequestList";
 import { DirectionsButton } from "./MemberView";
 import {
@@ -35,7 +36,7 @@ import {
   draftToInput,
 } from "./ItemEditor";
 import { DateTimeField, roundUp } from "./Pickers";
-import { Collapsible, ProgressBar, StepTracker } from "./Sections";
+import { Collapsible, ProgressBar, SummaryLinks } from "./Sections";
 
 const STEPS = ["Shares", "Shop", "Hand out"];
 
@@ -91,7 +92,7 @@ export function OrganizerView({
   const readOnly = viewing < Math.min(current, 2);
   return (
     <>
-      <StepTracker
+      <SummaryLinks
         steps={STEPS}
         current={current}
         viewing={viewing}
@@ -209,6 +210,7 @@ function CollectStep({
         return (
           <View key={i.id} style={{ gap: 6 }}>
             <View style={styles.between}>
+              <ItemIcon item={i} size={26} />
               <Text style={[styles.h3, { flex: 1 }]}>{i.name}</Text>
               <Text style={styles.text}>
                 {i.claimed} / {capacity} shares
@@ -405,7 +407,7 @@ function AddItemForm({
     [draft, setDraft] = useState<ItemDraft>(emptyDraft());
   const problems = draftProblems(draft);
   return (
-    <View style={[styles.note, { backgroundColor: "#fff", padding: 0 }]}>
+    <View style={[styles.note, { backgroundColor: P.paper, padding: 0 }]}>
       <ItemEditor
         title={requestId ? "Choose the item to add" : "New item"}
         value={draft}
@@ -614,26 +616,32 @@ function ShopItem({
     <View
       style={{
         borderWidth: 1,
-        borderColor: shopping && i.bought ? C.ink : C.line,
+        borderColor: shopping && i.bought ? P.ink : P.line,
         borderRadius: 10,
+        backgroundColor: P.paper,
         padding: 14,
         gap: 8,
       }}
     >
-      {shopping && onList && !readOnly ? (
-        <Check
-          label={`${i.requiredPacks} × ${i.name}: pack of ${i.packLabel}`}
-          value={i.bought}
-          onChange={(bought) => void patch({ bought })}
-          disabled={a.busy}
-        />
-      ) : (
-        <Text style={styles.h3}>
-          {onList ? `${i.requiredPacks} × ` : ""}
-          {i.name}
-          {onList ? `: pack of ${i.packLabel}` : ""}
-        </Text>
-      )}
+      <View style={styles.row}>
+        <ItemIcon item={i} size={48} />
+        <View style={{ flex: 1 }}>
+          {shopping && onList && !readOnly ? (
+            <Check
+              label={`${i.requiredPacks} × ${i.name}: pack of ${i.packLabel}`}
+              value={i.bought}
+              onChange={(bought) => void patch({ bought })}
+              disabled={a.busy}
+            />
+          ) : (
+            <Text style={styles.h3}>
+              {onList ? `${i.requiredPacks} × ` : ""}
+              {i.name}
+              {onList ? `: pack of ${i.packLabel}` : ""}
+            </Text>
+          )}
+        </View>
+      </View>
       <Text style={styles.muted}>
         {i.claimed} share{i.claimed === 1 ? "" : "s"} committed ·{" "}
         {money(i.priceCents)} per pack
@@ -780,13 +788,36 @@ function HandOutBag({
         : "Not here yet · pickup not confirmed";
   return (
     <Collapsible title={m.name} summary={status} defaultOpen={!m.collectedAt}>
+      <View style={styles.row}>
+        <View
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 22,
+            backgroundColor: P.chalk,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Text style={[type.label, { color: P.chalkText }]}>
+            {m.name
+              .split(" ")
+              .map((n) => n[0])
+              .slice(0, 2)
+              .join("")}
+          </Text>
+        </View>
+        <Text style={styles.h3}>{m.name}</Text>
+      </View>
       {m.claims
         .filter((c) => c.available && c.quantity > 0)
         .map((c) => (
-          <Text key={c.itemId} style={styles.text}>
-            {c.name} ·{" "}
-            {claimText(c.quantity, v.items.find((i) => i.id === c.itemId) ?? c)}
-          </Text>
+          <ReceiptLine
+            key={c.itemId}
+            name={`${c.name} ×${c.quantity}`}
+            category={v.items.find((i) => i.id === c.itemId)?.category}
+            cost={money(c.estimateCents)}
+          />
         ))}
       <Text style={styles.muted}>
         {money(m.estimateCents)} estimated product cost
@@ -878,7 +909,10 @@ function DraftReview({
       >
         {v.items.map((i) => (
           <View key={i.id} style={{ gap: 2 }}>
-            <Text style={styles.text}>{i.name}</Text>
+            <View style={styles.row}>
+              <ItemIcon item={i} size={26} />
+              <Text style={styles.h3}>{i.name}</Text>
+            </View>
             <Text style={styles.muted}>
               {describeShare(i).share} · {money(i.shareEstimateCents)} per share
             </Text>
