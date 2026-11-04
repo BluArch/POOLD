@@ -1,3 +1,4 @@
+import { palette as P } from "../../theme";
 import React, { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { router } from "expo-router";
@@ -9,14 +10,14 @@ import {
   styles,
   useResource,
   ResourceState,
-  C,
 } from "../../components/ui";
 import { OrderRow } from "../../components/OrderRow";
-import { Collapsible, Segmented } from "../../components/Sections";
+import { Chip, ChipRow } from "../../components/Market";
+import { Sheet } from "../../components/Sheet";
 import { Select, DateTimeField } from "../../components/Pickers";
 import { useSession } from "../../session";
 
-type Frame = "community" | "quick";
+type Frame = "all" | "soon";
 type Day = "any" | "today" | "tomorrow" | "pick";
 const ANY_STORE = "Any store",
   ANY_PLACE = "Anywhere";
@@ -25,7 +26,8 @@ const ymd = (d: Date) =>
 
 export default function Community() {
   const s = useSession();
-  const [frame, setFrame] = useState<Frame>("community"),
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [frame, setFrame] = useState<Frame>("all"),
     [store, setStore] = useState(ANY_STORE),
     [place, setPlace] = useState(ANY_PLACE),
     [day, setDay] = useState<Day>("any"),
@@ -40,58 +42,74 @@ export default function Community() {
           : "";
   const query = `${store !== ANY_STORE ? `&store=${encodeURIComponent(store)}` : ""}${place !== ANY_PLACE ? `&pickup=${encodeURIComponent(place)}` : ""}${date ? `&date=${date}` : ""}`;
   const r = useResource<OrderSummary[]>(`/orders?scope=discover${query}`);
-  const filtered = store !== ANY_STORE || place !== ANY_PLACE || day !== "any";
+  const filtered =
+    store !== ANY_STORE ||
+    place !== ANY_PLACE ||
+    day !== "any" ||
+    frame !== "all";
 
   const all = r.data ?? [];
   const mineOrganizing = all.filter((o) => o.organizerId === s.user?.id);
   const others = all.filter((o) => o.organizerId !== s.user?.id);
-  const inFrame = others.filter((o) => o.kind === frame);
+  const inFrame = others.filter(
+    (o) =>
+      frame === "all" ||
+      (Date.parse(o.deadline) > Date.now() &&
+        Date.parse(o.deadline) - Date.now() <= 86400000),
+  );
   const joined = inFrame.filter((o) => o.joined);
   const open = inFrame
     .filter((o) => !o.joined)
     .sort((a, b) => Date.parse(a.deadline) - Date.parse(b.deadline));
-  const count = (k: Frame) => others.filter((o) => o.kind === k).length;
 
   return (
     <Screen
-      title="Find your group."
-      subtitle="Join a group and take only the share you need."
+      title="Discover"
+      subtitle={`${new Date().toLocaleDateString("en-CA", { weekday: "short", month: "short", day: "2-digit" })} · ${all.length} groups open near UVic`}
       onRefresh={() => void r.refresh()}
       refreshing={r.loading}
+      header={
+        <ChipRow>
+          <Chip
+            dark
+            label="All"
+            selected={frame === "all" && store === ANY_STORE}
+            onPress={() => {
+              setFrame("all");
+              setStore(ANY_STORE);
+            }}
+          />
+          <Chip
+            dark
+            label="Closing soon"
+            selected={frame === "soon"}
+            onPress={() => setFrame(frame === "soon" ? "all" : "soon")}
+          />
+          {[
+            ["Costco", "Costco"],
+            ["Walmart", "Walmart"],
+            ["Real Canadian Superstore", "Superstore"],
+          ].map(([value, label]) => (
+            <Chip
+              key={value}
+              dark
+              label={label}
+              selected={store === value}
+              onPress={() => setStore(store === value ? ANY_STORE : value)}
+            />
+          ))}
+          <Chip
+            dark
+            label={`More filters${place !== ANY_PLACE || day !== "any" ? " · On" : ""}`}
+            onPress={() => setFiltersOpen(true)}
+          />
+        </ChipRow>
+      }
     >
-      <Segmented<Frame>
-        options={[
-          { value: "community", label: `Groups ${count("community")}` },
-          { value: "quick", label: `Quick splits ${count("quick")}` },
-        ]}
-        value={frame}
-        onChange={setFrame}
-      />
-      <Text style={styles.muted}>
-        {frame === "community"
-          ? "Shopping runs with several items. Claim shares of what you want."
-          : "One item split between a few people."}
-      </Text>
-
-      <Collapsible
-        title="Filter"
-        summary={
-          filtered
-            ? [
-                store !== ANY_STORE && store,
-                place !== ANY_PLACE && place,
-                day === "today"
-                  ? "Pickup today"
-                  : day === "tomorrow"
-                    ? "Pickup tomorrow"
-                    : day === "pick"
-                      ? `Pickup ${picked.toLocaleDateString("en-CA", { month: "short", day: "numeric" })}`
-                      : false,
-              ]
-                .filter(Boolean)
-                .join(" · ")
-            : "Store, pickup place or day"
-        }
+      <Sheet
+        title="Filter groups"
+        visible={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
       >
         <Select
           label="Store"
@@ -138,17 +156,19 @@ export default function Community() {
               setStore(ANY_STORE);
               setPlace(ANY_PLACE);
               setDay("any");
+              setFrame("all");
             }}
           >
             Clear filters
           </Button>
         )}
-      </Collapsible>
+        <Button onPress={() => setFiltersOpen(false)}>Show groups</Button>
+      </Sheet>
 
       <ResourceState resource={r} />
       {joined.length > 0 && (
         <View>
-          <Text style={styles.pill}>You’re in</Text>
+          <Text style={[styles.h2, { marginBottom: 12 }]}>You’re in</Text>
           {joined.map((o) => (
             <OrderRow key={o.id} order={o} />
           ))}
@@ -156,7 +176,7 @@ export default function Community() {
       )}
       {r.data && (
         <View>
-          <Text style={styles.pill}>Open to join</Text>
+          <Text style={[styles.h2, { marginBottom: 12 }]}>Open to join</Text>
           {open.map((o) => (
             <OrderRow key={o.id} order={o} />
           ))}
@@ -168,9 +188,7 @@ export default function Community() {
               <Text style={styles.muted}>
                 {filtered
                   ? "Try clearing a filter."
-                  : frame === "quick"
-                    ? "Start a quick split for one item you need."
-                    : "Organize a group, or suggest a product below."}
+                  : "Start a group from Start. You can suggest products inside an open group."}
               </Text>
             </View>
           )}
@@ -184,34 +202,13 @@ export default function Community() {
         >
           <Text style={styles.text}>
             Your own {mineOrganizing.length} group
-            {mineOrganizing.length === 1 ? " is" : "s are"} in Organize.
+            {mineOrganizing.length === 1 ? " is" : "s are"} in My groups.
           </Text>
-          <Text style={[styles.muted, { color: C.blue }]}>
-            Go to Organize →
+          <Text style={[styles.muted, { color: P.herbText }]}>
+            Go to My groups →
           </Text>
         </Pressable>
       )}
-
-      <View style={[styles.section, { gap: 10 }]}>
-        <Text style={styles.pill}>More</Text>
-        <Button secondary onPress={() => router.push("/(tabs)/requests")}>
-          Suggest a product
-        </Button>
-        <Button
-          secondary
-          onPress={() =>
-            router.push({
-              pathname: "/(tabs)/create",
-              params: { quick: "true" },
-            })
-          }
-        >
-          Start a one-item quick split
-        </Button>
-        <Button secondary onPress={() => router.push("/(tabs)/invite")}>
-          Open a private invite
-        </Button>
-      </View>
     </Screen>
   );
 }
