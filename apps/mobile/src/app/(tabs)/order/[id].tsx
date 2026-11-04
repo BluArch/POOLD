@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { View, Text } from "react-native";
 import { useLocalSearchParams } from "expo-router";
-import { type OrderView, STATUS_LABELS } from "@poold/contracts";
+import { type OrderView } from "@poold/contracts";
 import {
   Screen,
   styles,
@@ -9,6 +9,8 @@ import {
   ResourceState,
   when,
 } from "../../../components/ui";
+import { Stamp, StatusTrack } from "../../../components/Market";
+import { deadlineLabel } from "../../../theme";
 import { Segmented } from "../../../components/Sections";
 import { MemberView } from "../../../components/MemberView";
 import { OrganizerView } from "../../../components/OrganizerView";
@@ -40,7 +42,24 @@ export default function Order() {
     <Screen
       title={v?.order.name ?? "Your group."}
       subtitle={
-        v ? `${v.order.store} · ${STATUS_LABELS[v.order.status]}` : undefined
+        v
+          ? `${v.order.store} · ${v.order.organizerName} · PICKUP ${when(v.order.pickupAt)} · ${v.order.pickupLocation}`
+          : undefined
+      }
+      stamp={
+        v ? (
+          <Stamp
+            urgent={
+              v.order.status === "cancelled" ||
+              (v.order.status === "open" &&
+                Date.parse(v.order.deadline) - Date.now() < 86400000)
+            }
+          >
+            {v.order.status === "open"
+              ? deadlineLabel(v.order.deadline)
+              : v.order.status}
+          </Stamp>
+        ) : undefined
       }
       back
       onRefresh={() => void r.refresh()}
@@ -49,6 +68,7 @@ export default function Order() {
       <ResourceState resource={r} />
       {v && (
         <>
+          <StatusTrack status={v.order.status} />
           {v.isOrganizer && v.order.status !== "draft" && (
             <View style={{ gap: 6 }}>
               <Segmented<Mode>
@@ -65,12 +85,6 @@ export default function Order() {
                   : "This is what members see. Your own shares live here."}
               </Text>
             </View>
-          )}
-          {!v.isOrganizer && (
-            <Text style={styles.muted}>
-              Organized by {v.order.organizerName} · {v.order.memberCount} of{" "}
-              {v.order.maxMembers} joined · Pickup {when(v.order.pickupAt)}
-            </Text>
           )}
           {showOrganizer ? (
             <OrganizerView view={v} refresh={r.refresh} />
