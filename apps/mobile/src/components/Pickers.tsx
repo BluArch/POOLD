@@ -1,7 +1,8 @@
+import { palette as P } from "../theme";
 import React, { useEffect, useState } from "react";
 import { View, Text, Pressable, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { C, styles, Field } from "./ui";
+import { styles, Field } from "./ui";
 
 const DAYS = ["S", "M", "T", "W", "T", "F", "S"];
 const sameDay = (a: Date, b: Date) =>
@@ -88,22 +89,23 @@ export function DateTimeField({
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "space-between",
-            borderColor: open ? C.ink : C.line,
+            borderColor: open ? P.ink : P.line,
           },
         ]}
       >
         <Text style={styles.text}>{formatDateTime(value)}</Text>
-        <Ionicons name="calendar-outline" size={20} color={C.muted} />
+        <Ionicons name="calendar-outline" size={20} color={P.muted} />
       </Pressable>
       {!!hint && <Text style={styles.muted}>{hint}</Text>}
       {open && (
         <View
           style={{
             borderWidth: 1,
-            borderColor: C.line,
+            borderColor: P.line,
             borderRadius: 10,
-            padding: 12,
+            padding: 8,
             gap: 10,
+            backgroundColor: P.paper,
           }}
         >
           <View style={styles.between}>
@@ -113,9 +115,9 @@ export function DateTimeField({
               onPress={() =>
                 setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))
               }
-              style={{ padding: 10 }}
+              style={{ padding: 10, minHeight: 44, minWidth: 44 }}
             >
-              <Ionicons name="chevron-back" size={20} color={C.ink} />
+              <Ionicons name="chevron-back" size={20} color={P.ink} />
             </Pressable>
             <Text style={styles.h3}>
               {month.toLocaleDateString("en-CA", {
@@ -129,73 +131,82 @@ export function DateTimeField({
               onPress={() =>
                 setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))
               }
-              style={{ padding: 10 }}
+              style={{ padding: 10, minHeight: 44, minWidth: 44 }}
             >
-              <Ionicons name="chevron-forward" size={20} color={C.ink} />
+              <Ionicons name="chevron-forward" size={20} color={P.ink} />
             </Pressable>
           </View>
-          <View style={{ flexDirection: "row" }}>
-            {DAYS.map((d, i) => (
-              <Text
-                key={i}
-                style={[
-                  styles.muted,
-                  { flex: 1, textAlign: "center", fontSize: 13 },
-                ]}
-              >
-                {d}
-              </Text>
-            ))}
-          </View>
-          <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-            {cells.map((d, i) => {
-              if (!d)
-                return (
-                  <View key={`e${i}`} style={{ width: "14.28%", height: 40 }} />
-                );
-              const disabled = !!min && d < startOfDay(min);
-              const selected = sameDay(d, value);
-              return (
-                <Pressable
-                  key={d.toISOString()}
-                  accessibilityRole="button"
-                  accessibilityLabel={d.toDateString()}
-                  accessibilityState={{ selected, disabled }}
-                  disabled={disabled}
-                  onPress={() => setDay(d)}
-                  style={{
-                    width: "14.28%",
-                    height: 40,
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <View
-                    style={{
-                      width: 34,
-                      height: 34,
-                      borderRadius: 17,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      backgroundColor: selected ? C.ink : "transparent",
-                      borderWidth: sameDay(d, new Date()) && !selected ? 1 : 0,
-                      borderColor: C.line,
-                    }}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={{ width: 308 }}>
+              <View style={{ flexDirection: "row" }}>
+                {DAYS.map((d, i) => (
+                  <Text
+                    key={i}
+                    style={[
+                      styles.muted,
+                      { width: 44, textAlign: "center", fontSize: 13 },
+                    ]}
                   >
-                    <Text
+                    {d}
+                  </Text>
+                ))}
+              </View>
+              <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+                {cells.map((d, i) => {
+                  if (!d)
+                    return (
+                      <View key={`e${i}`} style={{ width: 44, height: 44 }} />
+                    );
+                  const disabled = !!min && d < startOfDay(min);
+                  const selected = sameDay(d, value);
+                  return (
+                    <Pressable
+                      key={d.toISOString()}
+                      accessibilityRole="button"
+                      accessibilityLabel={d.toDateString()}
+                      accessibilityState={{ selected, disabled }}
+                      disabled={disabled}
+                      onPress={() => setDay(d)}
                       style={{
-                        fontSize: 15,
-                        color: selected ? "#fff" : disabled ? "#b5bec8" : C.ink,
-                        fontWeight: selected ? "700" : "400",
+                        width: 44,
+                        height: 44,
+                        alignItems: "center",
+                        justifyContent: "center",
                       }}
                     >
-                      {d.getDate()}
-                    </Text>
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
+                      <View
+                        style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: 17,
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor: selected ? P.ink : "transparent",
+                          borderWidth:
+                            sameDay(d, new Date()) && !selected ? 1 : 0,
+                          borderColor: P.line,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 15,
+                            color: selected
+                              ? P.paper
+                              : disabled
+                                ? P.muted
+                                : P.ink,
+                            fontWeight: selected ? "700" : "400",
+                          }}
+                        >
+                          {d.getDate()}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          </ScrollView>
           <Text style={styles.label}>Time</Text>
           <ScrollView
             horizontal
@@ -215,11 +226,11 @@ export function DateTimeField({
                   onPress={() => setMinutes(m)}
                   style={{
                     width: 80,
-                    minHeight: 40,
+                    minHeight: 44,
                     borderRadius: 7,
                     borderWidth: 1,
-                    borderColor: selected ? C.ink : C.line,
-                    backgroundColor: selected ? C.ink : "#fff",
+                    borderColor: selected ? P.ink : P.line,
+                    backgroundColor: selected ? P.ink : P.paper,
                     alignItems: "center",
                     justifyContent: "center",
                     opacity: disabled ? 0.35 : 1,
@@ -228,7 +239,7 @@ export function DateTimeField({
                   <Text
                     style={{
                       fontSize: 14,
-                      color: selected ? "#fff" : C.ink,
+                      color: selected ? P.paper : P.ink,
                       fontWeight: selected ? "600" : "400",
                     }}
                   >
@@ -243,11 +254,14 @@ export function DateTimeField({
             onPress={() => setOpen(false)}
             style={{
               alignSelf: "flex-end",
+              minHeight: 44,
               paddingVertical: 8,
               paddingHorizontal: 14,
             }}
           >
-            <Text style={{ fontWeight: "600", color: C.blue, fontSize: 15 }}>
+            <Text
+              style={{ fontWeight: "600", color: P.herbText, fontSize: 15 }}
+            >
               Done
             </Text>
           </Pressable>
@@ -299,7 +313,7 @@ export function Select({
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "space-between",
-            borderColor: open ? C.ink : C.line,
+            borderColor: open ? P.ink : P.line,
           },
         ]}
       >
@@ -309,7 +323,7 @@ export function Select({
         <Ionicons
           name={open ? "chevron-up" : "chevron-down"}
           size={20}
-          color={C.muted}
+          color={P.muted}
         />
       </Pressable>
       {open && (
@@ -317,7 +331,7 @@ export function Select({
           accessibilityRole="menu"
           style={{
             borderWidth: 1,
-            borderColor: C.line,
+            borderColor: P.line,
             borderRadius: 8,
             overflow: "hidden",
           }}
@@ -345,16 +359,16 @@ export function Select({
                   minHeight: 44,
                   flexDirection: "row",
                   justifyContent: "space-between",
-                  backgroundColor: pressed || selected ? C.soft : "#fff",
+                  backgroundColor: pressed || selected ? P.paper : P.paper,
                   borderTopWidth: 1,
-                  borderTopColor: "#eef1f4",
+                  borderTopColor: P.line,
                 })}
               >
                 <Text style={styles.text}>
                   {o === "Other" ? "Other (type your own)" : o}
                 </Text>
                 {selected && (
-                  <Ionicons name="checkmark" size={20} color={C.ink} />
+                  <Ionicons name="checkmark" size={20} color={P.ink} />
                 )}
               </Pressable>
             );
