@@ -1,3 +1,4 @@
+import { palette as P } from "../../theme";
 import React, { useState, useEffect } from "react";
 import { View, Text } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
@@ -16,6 +17,8 @@ import {
   styles,
   ErrorText,
   useAction,
+  ScreenFooter,
+  Loading,
 } from "../../components/ui";
 import { QuantityStepper } from "../../components/Sections";
 import { DateTimeField, Select, roundUp } from "../../components/Pickers";
@@ -33,14 +36,15 @@ const later = (h: number) => roundUp(new Date(Date.now() + h * HOUR));
 const STORES = ["Costco", "Walmart", "Real Canadian Superstore"] as const;
 
 export default function Create() {
-  const { id, quick } = useLocalSearchParams<{ id?: string; quick?: string }>(),
-    a = useAction();
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  return <DraftForm key={id ?? "new"} id={id} />;
+}
+function DraftForm({ id }: { id?: string }) {
+  const a = useAction();
+  const [loaded, setLoaded] = useState(!id);
   const [name, setName] = useState(""),
     [store, setStore] = useState("Costco"),
     [visibility, setVisibility] = useState<"public" | "private">("public"),
-    [kind, setKind] = useState<"community" | "quick">(
-      quick ? "quick" : "community",
-    ),
     [max, setMax] = useState(6),
     [cadence, setCadence] = useState<"once" | "weekly" | "monthly">("once"),
     [deadline, setDeadline] = useState(later(24)),
@@ -54,15 +58,14 @@ export default function Create() {
     [publicPickup, setPublic] = useState(true),
     [items, setItems] = useState<ItemDraft[]>([emptyDraft()]);
 
-  useEffect(() => {
-    if (id)
-      void a.run(async () => {
+  const load = () =>
+    a.run(async () => {
+      if (id) {
         const v = await api<OrderView>(`/orders/${id}`),
           o = v.order;
         setName(o.name);
         setStore(o.store);
         setVisibility(o.visibility);
-        setKind(o.kind);
         setMax(o.maxMembers);
         setCadence(o.cadence);
         setDeadline(new Date(o.deadline));
@@ -81,7 +84,11 @@ export default function Create() {
             }),
           ),
         );
-      });
+        setLoaded(true);
+      }
+    });
+  useEffect(() => {
+    if (id) void load();
   }, [id]);
 
   // Keep the dates in order: changing an earlier date pushes later ones along.
@@ -123,7 +130,7 @@ export default function Create() {
       const b: OrderInput = {
         name,
         store,
-        kind,
+        kind: "community",
         visibility,
         maxMembers: max,
         cadence,
@@ -147,9 +154,21 @@ export default function Create() {
       });
     });
 
+  if (!loaded)
+    return (
+      <Screen title="Edit draft" back>
+        <Loading />
+        <ErrorText message={a.error} />
+        {!!a.error && (
+          <Button secondary disabled={a.busy} onPress={() => void load()}>
+            Retry
+          </Button>
+        )}
+      </Screen>
+    );
   return (
     <Screen
-      title={id ? "Edit your draft." : "A small shop, shared."}
+      title={id ? "Edit draft" : "Start a group"}
       subtitle="Save a draft, review it, then publish."
       back
     >
@@ -168,21 +187,6 @@ export default function Create() {
           onChange={setStore}
           allowOther
         />
-        <View style={[styles.row, { flexWrap: "wrap", gap: 8 }]}>
-          <Choice
-            label="Several items"
-            selected={kind === "community"}
-            onPress={() => setKind("community")}
-          />
-          <Choice
-            label="One-item quick split"
-            selected={kind === "quick"}
-            onPress={() => {
-              setKind("quick");
-              setItems(items.slice(0, 1));
-            }}
-          />
-        </View>
         <View style={[styles.row, { flexWrap: "wrap", gap: 8 }]}>
           <Choice
             label="Public group"
@@ -304,7 +308,7 @@ export default function Create() {
           key={n}
           style={{
             borderWidth: 1,
-            borderColor: "#d5dce4",
+            borderColor: P.line,
             borderRadius: 12,
             padding: 16,
             gap: 12,
@@ -326,15 +330,20 @@ export default function Create() {
           )}
         </View>
       ))}
-      {kind === "community" && items.length < 30 && (
+      {items.length < 30 && (
         <Button secondary onPress={() => setItems([...items, emptyDraft()])}>
           Add another item
         </Button>
       )}
       <ErrorText message={a.error} />
-      <Button disabled={a.busy} onPress={() => void save()}>
-        {a.busy ? "Saving…" : "Save draft & review"}
-      </Button>
+      <ScreenFooter>
+        <View style={styles.note}>
+          <ErrorText message={a.error} />
+          <Button disabled={a.busy} onPress={() => void save()}>
+            {a.busy ? "Saving…" : "Save draft"}
+          </Button>
+        </View>
+      </ScreenFooter>
     </Screen>
   );
 }
