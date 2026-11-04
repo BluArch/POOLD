@@ -185,6 +185,13 @@ export interface OrderSummary {
   organizerId: string;
   joined: boolean;
   preview: string;
+  previewItems?: {
+    name: string;
+    category: string;
+    priceCents: number;
+    sharesPerPack: number;
+    unit: string | null;
+  }[];
   cadence: "once" | "weekly" | "monthly";
   revision: number;
 }
