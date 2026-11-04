@@ -16,6 +16,7 @@ import {
   useResource,
   ResourceState,
 } from "../../components/ui";
+import { palette as P, type } from "../../theme";
 type DevMail = { to: string; subject: string; text: string; createdAt: string };
 export default function Account() {
   const s = useSession(),
@@ -32,69 +33,100 @@ export default function Account() {
     }
   }, [r.data]);
   return (
-    <Screen title="A familiar face." subtitle="Your POOLD account." back>
+    <Screen
+      title="Profile"
+      subtitle={s.user?.email}
+      header={
+        <View style={styles.row}>
+          {photo ? (
+            <Image
+              source={{ uri: photo }}
+              accessibilityLabel="Your profile photo"
+              style={{ width: 72, height: 72, borderRadius: 36 }}
+            />
+          ) : (
+            <View
+              style={{
+                width: 72,
+                height: 72,
+                borderRadius: 36,
+                backgroundColor: P.chalkTile,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Text style={[type.cardTitle, { color: P.chalkText }]}>
+                {name
+                  .split(" ")
+                  .map((n) => n[0])
+                  .slice(0, 2)
+                  .join("")}
+              </Text>
+            </View>
+          )}
+          <Text style={[type.cardTitle, { color: P.chalkText, flex: 1 }]}>
+            {s.user?.name}
+          </Text>
+        </View>
+      }
+    >
       <ResourceState resource={r} />
-      {photo && (
-        <Image
-          source={{ uri: photo }}
-          accessibilityLabel="Your profile photo"
-          style={{ width: 88, height: 88, borderRadius: 44 }}
-        />
-      )}
-      <Text style={styles.text}>{s.user?.email}</Text>
-      <Text style={styles.muted}>
-        {s.user?.university ? "Verified UVic email" : "Verified email"} ·{" "}
-        {r.data?.completed ?? 0} completed orders
-      </Text>
-      <Field label="Display name" value={name} onChangeText={setName} />
-      <Button
-        secondary
-        disabled={a.busy}
-        onPress={() =>
-          void a.run(async () => {
-            const result = await ImagePicker.launchImageLibraryAsync({
-              mediaTypes: ["images"],
-              allowsEditing: true,
-              aspect: [1, 1],
-              quality: 0.35,
-              base64: true,
-            });
-            if (result.canceled) return;
-            const asset = result.assets[0];
-            if (!asset.base64)
-              throw new Error(
-                "Unable to read this photo. Choose another image.",
-              );
-            const value = `data:${asset.mimeType ?? "image/jpeg"};base64,${asset.base64}`;
-            if (value.length > 180000)
-              throw new Error("Choose a smaller image, up to about 130 KB.");
-            setPhoto(value);
-          })
-        }
-      >
-        Choose profile photo
-      </Button>
-      {photo && (
-        <Button secondary onPress={() => setPhoto(null)}>
-          Remove photo
+      <View style={styles.section}>
+        <Text style={styles.text}>{s.user?.email}</Text>
+        <Text style={styles.muted}>
+          {s.user?.university ? "Verified UVic email" : "Verified email"} ·{" "}
+          {r.data?.completed ?? 0} completed orders
+        </Text>
+        <Field label="Display name" value={name} onChangeText={setName} />
+        <Button
+          secondary
+          disabled={a.busy}
+          onPress={() =>
+            void a.run(async () => {
+              const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ["images"],
+                allowsEditing: true,
+                aspect: [1, 1],
+                quality: 0.35,
+                base64: true,
+              });
+              if (result.canceled) return;
+              const asset = result.assets[0];
+              if (!asset.base64)
+                throw new Error(
+                  "Unable to read this photo. Choose another image.",
+                );
+              const value = `data:${asset.mimeType ?? "image/jpeg"};base64,${asset.base64}`;
+              if (value.length > 180000)
+                throw new Error("Choose a smaller image, up to about 130 KB.");
+              setPhoto(value);
+            })
+          }
+        >
+          Choose profile photo
         </Button>
-      )}
-      <Button
-        disabled={a.busy}
-        onPress={() =>
-          void a.run(async () => {
-            await api("/profile", {
-              method: "PATCH",
-              body: JSON.stringify({ name, photo }),
-            });
-            await s.refresh();
-            await r.refresh();
-            setMessage("Profile saved.");
-          })
-        }
-      >
-        Save profile
-      </Button>
+        {photo && (
+          <Button secondary onPress={() => setPhoto(null)}>
+            Remove photo
+          </Button>
+        )}
+        <Button
+          disabled={a.busy}
+          onPress={() =>
+            void a.run(async () => {
+              await api("/profile", {
+                method: "PATCH",
+                body: JSON.stringify({ name, photo }),
+              });
+              await s.refresh();
+              await r.refresh();
+              setMessage("Profile saved.");
+            })
+          }
+        >
+          Save profile
+        </Button>
+      </View>
       <View style={styles.section}>
         <Text style={styles.h2}>Order updates</Text>
         <Text style={styles.muted}>
@@ -131,6 +163,7 @@ export default function Account() {
       )}
       <Button
         secondary
+        danger
         disabled={a.busy}
         onPress={() =>
           void a.run(async () => {
