@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
 import { View, Text, Linking } from "react-native";
 import {
   type OrderView,
@@ -6,28 +7,29 @@ import {
   type ProductRequest,
   money,
   describeShare,
-  claimText,
 } from "@poold/contracts";
 import { api, post } from "../api";
 import {
   Button,
   Check,
-  Choice,
   styles,
   ErrorText,
   useAction,
   useResource,
   when,
+  ScreenFooter,
 } from "./ui";
-import { Collapsible, QuantityStepper } from "./Sections";
+import { Collapsible } from "./Sections";
 import { RequestCard, RequestForm } from "./RequestList";
 
-const estimateFor = (i: Item, q: number) =>
-  i.available
-    ? Math.floor(
-        (i.priceCents * q + Math.floor(i.sharesPerPack / 2)) / i.sharesPerPack,
-      )
-    : 0;
+import {
+  estimateFor,
+  ShareItemCard,
+  ReceiptPanel,
+  ReceiptLine,
+} from "./Receipt";
+import { Zigzag, Chip, ChipRow } from "./Market";
+import { palette as P, type } from "../theme";
 
 /** What a buyer sees: available items first, then their own shares, then pickup. */
 export function MemberView({
@@ -44,89 +46,45 @@ export function MemberView({
   const hasShares = v.myClaims.some((c) => c.quantity > 0);
   const full = o.memberCount >= o.maxMembers && !o.joined;
 
-  const [chooseOpen, setChooseOpen] = useState(!hasShares && canChange);
-  const [sharesOpen, setSharesOpen] = useState(hasShares);
-  const [pickupOpen, setPickupOpen] = useState(o.status === "ready");
-
   return (
     <>
-      {hasShares && (
-        <Collapsible
-          title="Your shares"
-          summary={`${v.myClaims.reduce((n, c) => n + c.quantity, 0)} shares · ${money(v.myEstimateCents)} estimated`}
-          open={sharesOpen}
-          onToggle={setSharesOpen}
-        >
-          {v.myClaims.map((c) => (
-            <View key={c.itemId} style={styles.between}>
-              <Text style={[styles.text, { flex: 1 }]}>
-                {c.name} ·{" "}
-                {claimText(
-                  c.quantity,
-                  v.items.find((i) => i.id === c.itemId) ?? c,
-                )}
-              </Text>
-              <Text style={c.available ? styles.text : styles.error}>
-                {c.available ? money(c.estimateCents) : "Unavailable"}
+      {canChange && (
+        <>
+          <Text style={styles.h2}>Pick from the stall</Text>
+          {full ? (
+            <View style={styles.note}>
+              <Text style={styles.text}>
+                Every spot in this group is taken. Check Discover for another
+                group.
               </Text>
             </View>
-          ))}
-          <View style={[styles.between, { paddingTop: 4 }]}>
-            <Text style={styles.h3}>Estimated total</Text>
-            <Text style={styles.h3}>{money(v.myEstimateCents)}</Text>
-          </View>
-          <Text style={styles.muted}>
-            {canChange
-              ? `You can change or release shares until ${when(o.deadline)}`
-              : "Shares are locked. Contact the organizer for changes."}
-          </Text>
-          {canChange && (
-            <Button
-              secondary
-              onPress={() => {
-                setChooseOpen(true);
-                setSharesOpen(false);
-              }}
-            >
-              Edit shares
-            </Button>
-          )}
-        </Collapsible>
-      )}
-
-      {canChange && (
-        <Collapsible
-          title={hasShares ? "Change your shares" : "Choose your shares"}
-          summary={
-            full
-              ? "This group is full"
-              : (() => {
-                  const n = v.items.filter(
-                    (i) => i.available && i.remaining > 0,
-                  ).length;
-                  return `${n} item${n === 1 ? "" : "s"} with shares left · closes ${when(o.deadline)}`;
-                })()
-          }
-          open={chooseOpen}
-          onToggle={setChooseOpen}
-        >
-          {full ? (
-            <Text style={styles.muted}>
-              Every spot in this group is taken. Check Community for another
-              group.
-            </Text>
           ) : (
-            <ShareChooser
-              view={v}
-              invite={invite}
-              onSaved={async () => {
-                await refresh();
-                setChooseOpen(false);
-                setSharesOpen(true);
-              }}
-            />
+            <ShareChooser view={v} invite={invite} onSaved={refresh} />
           )}
-        </Collapsible>
+        </>
+      )}
+      {!canChange && hasShares && (
+        <View>
+          <View style={styles.section}>
+            <Text style={styles.h2}>Your shares</Text>
+            {v.myClaims.map((c) => (
+              <ReceiptLine
+                key={c.itemId}
+                name={`${c.name} ×${c.quantity}`}
+                category={v.items.find((i) => i.id === c.itemId)?.category}
+                cost={c.available ? money(c.estimateCents) : "Unavailable"}
+              />
+            ))}
+            <View style={styles.between}>
+              <Text style={type.mono}>EST. TOTAL</Text>
+              <Text style={type.total}>{money(v.myEstimateCents)}</Text>
+            </View>
+            <Text style={styles.muted}>
+              Shares are locked. Contact the organizer for changes.
+            </Text>
+          </View>
+          <Zigzag />
+        </View>
       )}
 
       {!canChange && o.status === "open" && (
@@ -145,14 +103,7 @@ export function MemberView({
       {!canChange && !hasShares && <ItemsReadOnly items={v.items} />}
 
       {(hasShares || !canChange) && (
-        <Collapsible
-          title="Pickup"
-          summary={`${o.pickupLocation} · ${when(o.pickupAt)}`}
-          open={pickupOpen}
-          onToggle={setPickupOpen}
-        >
-          <PickupDetails view={v} refresh={refresh} />
-        </Collapsible>
+        <PickupDetails view={v} refresh={refresh} />
       )}
 
       <Collapsible
@@ -190,11 +141,11 @@ function GroupRequests({
   const open = r.data?.filter((q) => q.status === "open").length ?? 0;
   return (
     <Collapsible
-      title="Want something else?"
+      title="Suggest a product"
       summary={
         open
           ? `${open} request${open === 1 ? "" : "s"} waiting for the organizer`
-          : "Ask the organizer to add an item"
+          : "Ask the organizer to add an item to this group"
       }
     >
       <Text style={styles.muted}>
@@ -281,118 +232,81 @@ function ShareChooser({
   return (
     <>
       {categories.length > 2 && (
-        <View style={[styles.row, { flexWrap: "wrap", gap: 8 }]}>
+        <ChipRow>
           {categories.map((c) => (
-            <Choice
+            <Chip
               key={c}
               label={c}
               selected={category === c}
               onPress={() => setCategory(c)}
             />
           ))}
-        </View>
+        </ChipRow>
       )}
       {v.items
         .filter((i) => category === "All" || i.category === category)
-        .map((i, index) => {
-          const max = i.available ? i.remaining + i.mine : 0;
-          const q = qty[i.id] ?? 0;
-          return (
+        .map((i) => (
+          <ShareItemCard
+            key={i.id}
+            item={i}
+            quantity={qty[i.id] ?? 0}
+            onChange={(n) => setQty({ ...qty, [i.id]: n })}
+          />
+        ))}
+      <ScreenFooter>
+        <ReceiptPanel
+          items={selected}
+          quantity={(id) => qty[id] ?? 0}
+          total={total}
+          organizer={v.order.organizerName}
+          action={
+            <Button
+              disabled={
+                a.busy ||
+                !changed ||
+                (!releasing && !attending) ||
+                (releasing && v.myClaims.length === 0)
+              }
+              danger={releasing && v.myClaims.length > 0}
+              onPress={() => void save()}
+            >
+              {a.busy
+                ? "Saving…"
+                : releasing
+                  ? v.myClaims.length
+                    ? "Release all my shares"
+                    : "Choose at least one share"
+                  : v.myClaims.length
+                    ? "Save changes"
+                    : "Confirm shares"}
+            </Button>
+          }
+        >
+          {!releasing && (
             <View
-              key={i.id}
               style={{
-                gap: 6,
-                paddingVertical: 12,
-                borderTopWidth: index === 0 ? 0 : 1,
-                borderTopColor: "#eef1f4",
+                backgroundColor: P.paper,
+                borderRadius: 8,
+                paddingHorizontal: 10,
               }}
             >
-              <View style={styles.between}>
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={styles.h3}>{i.name}</Text>
-                  <Text style={styles.text}>{describeShare(i).share}</Text>
-                  <Text style={styles.text}>
-                    {money(i.shareEstimateCents)} per share
-                  </Text>
-                  <Text style={styles.muted}>{describeShare(i).pack}</Text>
-                  <Text style={styles.muted}>
-                    {!i.available
-                      ? "Unavailable"
-                      : i.remaining > 0
-                        ? `${i.remaining} share${i.remaining === 1 ? "" : "s"} left`
-                        : "No shares left"}
-                    {i.priceCents !== i.originalPriceCents
-                      ? " · Price changed"
-                      : ""}
-                  </Text>
-                </View>
-                <QuantityStepper
-                  label={i.name}
-                  value={q}
-                  max={max}
-                  onChange={(n) => setQty({ ...qty, [i.id]: n })}
-                />
-              </View>
-              {!!i.storage && <Text style={styles.muted}>{i.storage}</Text>}
-              {i.referenceShareCents !== null &&
-                i.referenceShareCents > i.shareEstimateCents && (
-                  <Text style={styles.muted}>
-                    About {money(i.referenceShareCents - i.shareEstimateCents)}{" "}
-                    less per share than buying the same at Walmart.
-                  </Text>
-                )}
+              <Check
+                label="I can attend this pickup time"
+                value={attending}
+                onChange={setAttending}
+              />
             </View>
-          );
-        })}
-
-      <View style={[styles.note, { marginTop: 4 }]}>
-        <View style={styles.between}>
-          <Text style={styles.h3}>
-            {releasing
-              ? "No shares selected"
-              : `${selected.length} item${selected.length === 1 ? "" : "s"} selected`}
-          </Text>
-          <Text style={styles.h3}>{money(total)}</Text>
-        </View>
-        {!releasing && (
-          <>
-            <Text style={styles.muted}>
-              Pickup at {v.order.pickupLocation}, {when(v.order.pickupAt)}
-            </Text>
-            <Check
-              label="I can attend this pickup time"
-              value={attending}
-              onChange={setAttending}
-            />
-          </>
-        )}
-        <ErrorText message={a.error} />
-        <Button
-          disabled={
-            a.busy ||
-            !changed ||
-            (!releasing && !attending) ||
-            (releasing && v.myClaims.length === 0)
-          }
-          danger={releasing && v.myClaims.length > 0}
-          onPress={() => void save()}
-        >
-          {a.busy
-            ? "Saving…"
-            : releasing
-              ? v.myClaims.length
-                ? "Release all my shares"
-                : "Choose at least one share"
-              : v.myClaims.length
-                ? "Save changes"
-                : "Confirm shares"}
-        </Button>
-        {!!a.error && (
-          <Button secondary onPress={() => void onSaved()}>
-            Refresh availability & prices
-          </Button>
-        )}
-      </View>
+          )}
+          {!!a.error && (
+            <View style={styles.note}>
+              <ErrorText message={a.error} />
+              <Button secondary onPress={() => void onSaved()}>
+                Refresh availability & prices
+              </Button>
+            </View>
+          )}
+        </ReceiptPanel>
+      </ScreenFooter>
     </>
   );
 }
@@ -434,57 +348,145 @@ export function PickupDetails({
     m = v.mine,
     o = v.order;
   const needsPickup = !!m?.claims.some((c) => c.available);
+  const days = Math.ceil((Date.parse(o.pickupAt) - Date.now()) / 86400000);
   return (
     <>
-      <Text style={styles.text}>{o.pickupLocation}</Text>
-      <Text style={styles.muted}>
-        {when(o.pickupAt)} – {when(o.pickupEnd)}
-      </Text>
-      {m &&
-        (!needsPickup ? (
-          <Text style={styles.muted}>You have nothing to collect.</Text>
-        ) : m.collectedAt ? (
-          <Text style={styles.h3}>Collected · {when(m.collectedAt)}</Text>
-        ) : (
-          <>
-            <Text style={styles.text}>
-              {o.status === "ready"
-                ? "Your share is ready to collect."
-                : o.status === "shopping"
-                  ? "The organizer is shopping."
-                  : "Your share will be ready after shopping."}
-            </Text>
-            {v.collectionCode && (
-              <View style={styles.note}>
-                <Text style={styles.label}>Your collection code</Text>
+      <View>
+        <Zigzag top />
+        <View style={[styles.section, { borderRadius: 0, gap: 16 }]}>
+          {m && !needsPickup ? (
+            <Text style={styles.h3}>You have nothing to collect.</Text>
+          ) : m?.collectedAt ? (
+            <Text style={styles.h3}>Collected · {when(m.collectedAt)}</Text>
+          ) : (
+            <>
+              <Text style={type.mono}>
+                SHOW THIS CODE TO {o.organizerName.toUpperCase()}
+              </Text>
+              {v.collectionCode ? (
                 <Text
                   selectable
-                  style={{ fontSize: 24, letterSpacing: 1, fontWeight: "700" }}
+                  style={{
+                    ...type.total,
+                    fontFamily: "DMMono_500Medium",
+                    fontSize: 36,
+                    lineHeight: 46,
+                    letterSpacing: 1,
+                  }}
                 >
                   {v.collectionCode.match(/.{1,4}/g)?.join(" ")}
                 </Text>
+              ) : (
+                <Text style={styles.muted}>
+                  {o.status === "shopping"
+                    ? "The organizer is shopping."
+                    : "Your share will be ready after shopping."}
+                </Text>
+              )}
+              {v.collectionCode && (
                 <Text style={styles.muted}>
                   Show this to your organizer when you collect your bag.
                 </Text>
-              </View>
-            )}
-            {o.status === "ready" && (
-              <Button
-                disabled={a.busy || m.arrived}
-                onPress={() =>
-                  void a.run(async () => {
-                    await post(`/orders/${o.id}/arrive`);
-                    await refresh();
-                  })
-                }
+              )}
+            </>
+          )}
+          <View
+            style={{
+              borderTopWidth: 1,
+              borderStyle: "dashed",
+              borderColor: P.line,
+              paddingTop: 16,
+              gap: 16,
+            }}
+          >
+            <View style={styles.row}>
+              <View
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 11,
+                  backgroundColor: P.track,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
               >
-                {m.arrived
-                  ? "Organizer notified you arrived"
-                  : "I’m at the pickup place"}
-              </Button>
-            )}
-          </>
-        ))}
+                <Ionicons name="location-outline" size={24} color={P.chalk} />
+              </View>
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={type.mono}>PICKUP PLACE</Text>
+                <Text style={styles.text}>{o.pickupLocation}</Text>
+              </View>
+            </View>
+            <View style={styles.row}>
+              <View
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 11,
+                  backgroundColor: P.track,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Ionicons name="time-outline" size={24} color={P.chalk} />
+              </View>
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={styles.text}>
+                  {when(o.pickupAt)} – {when(o.pickupEnd)}
+                </Text>
+                <Text style={type.mono}>
+                  {days > 0
+                    ? `IN ${days} ${days === 1 ? "DAY" : "DAYS"}`
+                    : days === 0
+                      ? "PICKUP DAY"
+                      : "PICKUP TIME PASSED"}
+                </Text>
+              </View>
+            </View>
+          </View>
+          {!!v.myClaims.length && (
+            <View
+              style={{
+                borderTopWidth: 1,
+                borderStyle: "dashed",
+                borderColor: P.line,
+                paddingTop: 16,
+                gap: 12,
+              }}
+            >
+              <Text style={styles.h2}>In your bag</Text>
+              {v.myClaims.map((c) => (
+                <ReceiptLine
+                  key={c.itemId}
+                  name={`${c.name} ×${c.quantity}`}
+                  category={v.items.find((i) => i.id === c.itemId)?.category}
+                  cost={c.available ? money(c.estimateCents) : "Unavailable"}
+                />
+              ))}
+              <View style={styles.between}>
+                <Text style={type.mono}>EST. TOTAL</Text>
+                <Text style={type.total}>{money(v.myEstimateCents)}</Text>
+              </View>
+            </View>
+          )}
+        </View>
+        <Zigzag />
+      </View>
+      {m && needsPickup && !m.collectedAt && o.status === "ready" && (
+        <Button
+          disabled={a.busy || m.arrived}
+          onPress={() =>
+            void a.run(async () => {
+              await post(`/orders/${o.id}/arrive`);
+              await refresh();
+            })
+          }
+        >
+          {m.arrived
+            ? "Organizer notified you arrived"
+            : "I’m at the pickup place"}
+        </Button>
+      )}
       <DirectionsButton order={o} />
       <ErrorText message={a.error} />
     </>
