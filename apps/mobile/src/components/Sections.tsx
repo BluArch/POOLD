@@ -230,6 +230,3 @@ export function SummaryLinks({
     </View>
   );
 }
-
-/** Compatibility for organizer consumers migrated in a subsequent commit. */
-export { SummaryLinks as StepTracker };

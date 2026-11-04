@@ -19,8 +19,6 @@ import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "../api";
 import { palette as P, fonts, type, shape, spacing } from "../theme";
-/** Compatibility for screens migrated in subsequent commits. */
-export const C = { ...P, blue: P.herbText, red: P.beet, soft: P.paper };
 export const styles = StyleSheet.create({
   title: type.title,
   h2: type.section,
