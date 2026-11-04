@@ -1,20 +1,18 @@
 import React, { useState } from "react";
-import {
-  Text,
-  TextInput,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  View,
-} from "react-native";
+import { Text, Pressable, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, Redirect } from "expo-router";
 import { useSession } from "../session";
 import EmailVerification from "../components/EmailVerification";
+import {
+  Screen,
+  Button,
+  Field,
+  Loading,
+  ErrorText,
+  styles,
+} from "../components/ui";
+import { palette as P, type } from "../theme";
 export default function Home() {
   const s = useSession(),
     query = useLocalSearchParams<{
@@ -42,12 +40,7 @@ export default function Home() {
       setBusy(false);
     }
   };
-  if (s.loading)
-    return (
-      <SafeAreaView style={styles.root}>
-        <ActivityIndicator accessibilityLabel="Loading session" />
-      </SafeAreaView>
-    );
+  if (s.loading) return <Loading />;
   if (s.user?.verified)
     return (
       <Redirect
@@ -88,156 +81,123 @@ export default function Home() {
       />
     );
   return (
-    <SafeAreaView style={styles.root}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-        >
-          <Text style={styles.brand}>poold</Text>
-          <Text style={styles.title}>Good things, shared.</Text>
-          <Text style={styles.muted}>
-            Bulk groceries. Portions that fit your life.
-          </Text>
+    <Screen
+      title={mode === "login" ? "Sign in" : "Create your account"}
+      subtitle="Good things, shared."
+    >
+      <View style={styles.section}>
+        <Button secondary onPress={() => setWelcome(true)}>
+          What is POOLD?
+        </Button>
+        <ErrorText message={error || s.error} />
+        {!!s.error && (
+          <Button secondary onPress={() => void run(s.refresh)}>
+            Retry connection
+          </Button>
+        )}
+        {!!message && <Text style={styles.text}>{message}</Text>}
+        {mode === "register" && (
+          <Field label="Display name" value={name} onChangeText={setName} />
+        )}
+        <Field
+          label="Email address"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          autoComplete="email"
+          value={email}
+          onChangeText={setEmail}
+          style={{ letterSpacing: 0 }}
+        />
+        <View>
+          <Field
+            label="Password"
+            secureTextEntry={!passwordVisible}
+            autoCapitalize="none"
+            autoCorrect={false}
+            spellCheck={false}
+            value={password}
+            onChangeText={setPassword}
+            style={{ paddingRight: 56 }}
+          />
           <Pressable
             accessibilityRole="button"
-            style={styles.backLink}
-            onPress={() => setWelcome(true)}
+            accessibilityLabel={
+              passwordVisible ? "Hide password" : "Show password"
+            }
+            onPress={() => setPasswordVisible(!passwordVisible)}
+            style={{
+              position: "absolute",
+              right: 4,
+              bottom: 2,
+              width: 44,
+              height: 44,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
           >
-            <Ionicons name="arrow-back-outline" size={18} color="#576780" />
-            <Text style={styles.muted}>What is POOLD?</Text>
+            <Ionicons
+              name={passwordVisible ? "eye-off-outline" : "eye-outline"}
+              size={22}
+              color={P.muted}
+            />
           </Pressable>
-          {!!(error || s.error) && (
-            <Text accessibilityRole="alert" style={styles.error}>
-              {error || s.error}
-            </Text>
-          )}
-          {!!s.error && (
-            <Pressable style={styles.link} onPress={() => run(s.refresh)}>
-              <Text>Retry connection</Text>
-            </Pressable>
-          )}
-          {!!message && <Text>{message}</Text>}
-          {!s.user ? (
-            <>
-              <Text style={styles.heading}>
-                {mode === "login" ? "Sign in" : "Create your account"}
-              </Text>
-              {mode === "register" && (
-                <TextInput
-                  style={styles.input}
-                  placeholder="Display name"
-                  accessibilityLabel="Display name"
-                  value={name}
-                  onChangeText={setName}
-                />
-              )}
-              <TextInput
-                style={styles.input}
-                placeholder="Email address"
-                accessibilityLabel="Email address"
-                autoCapitalize="none"
-                keyboardType="email-address"
-                value={email}
-                onChangeText={setEmail}
-              />
-              <View style={styles.passwordField}>
-                <TextInput
-                  style={[styles.input, styles.passwordInput]}
-                  placeholder="Password"
-                  accessibilityLabel="Password"
-                  secureTextEntry={!passwordVisible}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  spellCheck={false}
-                  value={password}
-                  onChangeText={setPassword}
-                />
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    passwordVisible ? "Hide password" : "Show password"
-                  }
-                  onPress={() => setPasswordVisible((visible) => !visible)}
-                  style={styles.passwordToggle}
-                >
-                  <Ionicons
-                    name={passwordVisible ? "eye-off-outline" : "eye-outline"}
-                    size={22}
-                    color="#576780"
-                  />
-                </Pressable>
-              </View>
-              {mode === "register" && (
-                <Text style={styles.muted}>
-                  Use at least 8 characters for your password.
-                </Text>
-              )}
-              <Pressable
-                style={styles.button}
-                disabled={busy}
-                onPress={() =>
-                  run(async () => {
-                    if (mode === "register") {
-                      const r = await s.login("/auth/register", {
-                        name,
-                        email,
-                        password,
-                      });
-                      setMessage(r.message ?? "Your account has been created.");
-                      setPassword("");
-                      setPasswordVisible(false);
-                    } else await s.login("/auth/login", { email, password });
-                  })
-                }
-              >
-                <Text style={styles.buttonText}>
-                  {busy
-                    ? "Please wait…"
-                    : mode === "login"
-                      ? "Sign in"
-                      : "Create account"}
-                </Text>
-              </Pressable>
-              <Pressable
-                style={styles.link}
-                onPress={() => {
-                  setError("");
-                  setMessage("");
-                  setPasswordVisible(false);
-                  setMode(mode === "login" ? "register" : "login");
-                }}
-              >
-                <Text>
-                  {mode === "login" ? "Create an account" : "Back to sign in"}
-                </Text>
-              </Pressable>
-              {s.demoEnabled && (
-                <>
-                  <Text style={styles.heading}>Local demo</Text>
-                  <Text style={styles.muted}>
-                    Explore POOLD with a sample account.
-                  </Text>
-                  <Pressable
-                    accessibilityRole="button"
-                    style={styles.link}
-                    disabled={busy}
-                    onPress={() =>
-                      run(() => s.login("/auth/demo", { userId: "demo-maya" }))
-                    }
-                  >
-                    <Text>Continue as Maya</Text>
-                  </Pressable>
-                </>
-              )}
-            </>
-          ) : null}
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        </View>
+        {mode === "register" && (
+          <Text style={styles.muted}>
+            Use at least 8 characters for your password.
+          </Text>
+        )}
+        <Button
+          disabled={busy}
+          onPress={() =>
+            void run(async () => {
+              if (mode === "register") {
+                const result = await s.login("/auth/register", {
+                  name,
+                  email,
+                  password,
+                });
+                setMessage(result.message ?? "Your account has been created.");
+                setPassword("");
+                setPasswordVisible(false);
+              } else await s.login("/auth/login", { email, password });
+            })
+          }
+        >
+          {busy
+            ? "Please wait…"
+            : mode === "login"
+              ? "Sign in"
+              : "Create account"}
+        </Button>
+        <Button
+          secondary
+          onPress={() => {
+            setError("");
+            setMessage("");
+            setPasswordVisible(false);
+            setMode(mode === "login" ? "register" : "login");
+          }}
+        >
+          {mode === "login" ? "Create an account" : "Back to sign in"}
+        </Button>
+      </View>
+      {s.demoEnabled && (
+        <View style={styles.section}>
+          <Text style={styles.h2}>Local demo</Text>
+          <Text style={styles.muted}>Explore POOLD with a sample account.</Text>
+          <Button
+            secondary
+            disabled={busy}
+            onPress={() =>
+              void run(() => s.login("/auth/demo", { userId: "demo-maya" }))
+            }
+          >
+            Continue as Maya
+          </Button>
+        </View>
+      )}
+    </Screen>
   );
 }
 const STEPS: {
@@ -271,157 +231,59 @@ function Welcome({
   onStart: (mode: "login" | "register") => void;
 }) {
   return (
-    <SafeAreaView style={styles.root}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.brand}>poold</Text>
-        <Text style={styles.title}>Good things, shared.</Text>
-        <Text style={styles.lead}>
-          POOLD lets students split bulk groceries and household items, so you
-          get bulk prices without buying more than you need.
-        </Text>
+    <Screen
+      title="Good things, shared."
+      titleStyle={{ fontSize: 40, lineHeight: 46 }}
+      subtitle="Bulk groceries. Portions that fit your life."
+      header={
+        <View style={{ minHeight: 76, justifyContent: "center" }}>
+          <Text style={[type.body, { color: P.chalkMuted }]}>
+            A little market for your campus community.
+          </Text>
+        </View>
+      }
+    >
+      <View style={{ gap: 20 }}>
         {invited && (
-          <View style={styles.invite}>
-            <Ionicons name="mail-open-outline" size={20} color="#0f1b2a" />
-            <Text style={[styles.muted, { flex: 1, color: "#0f1b2a" }]}>
+          <View style={styles.note}>
+            <Text style={styles.text}>
               You’ve been invited to a group. Sign in or create an account to
               see it.
             </Text>
           </View>
         )}
-        <View style={styles.steps}>
-          {STEPS.map((step, i) => (
-            <View key={step.title} style={styles.step}>
-              <View style={styles.stepIcon}>
-                <Ionicons name={step.icon} size={22} color="#0f1b2a" />
-              </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={styles.stepTitle}>
-                  {i + 1}. {step.title}
-                </Text>
-                <Text style={styles.muted}>{step.body}</Text>
-              </View>
+        {STEPS.map((step) => (
+          <View
+            key={step.title}
+            style={[styles.row, { alignItems: "flex-start" }]}
+          >
+            <View
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: 12,
+                backgroundColor: P.track,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons name={step.icon} size={26} color={P.chalk} />
             </View>
-          ))}
-        </View>
-        <View style={styles.organizer}>
-          <Ionicons name="storefront-outline" size={20} color="#576780" />
-          <Text style={[styles.muted, { flex: 1 }]}>
-            Going shopping anyway? Organize a group and POOLD keeps track of
-            shares, the shopping list and pickup for you.
-          </Text>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          style={styles.button}
-          onPress={() => onStart("register")}
-        >
-          <Text style={styles.buttonText}>Get started</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          style={styles.secondaryButton}
-          onPress={() => onStart("login")}
-        >
-          <Text style={styles.secondaryText}>I already have an account</Text>
-        </Pressable>
-      </ScrollView>
-    </SafeAreaView>
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text style={type.item}>{step.title}</Text>
+              <Text style={styles.muted}>{step.body}</Text>
+            </View>
+          </View>
+        ))}
+        <Text style={styles.muted}>
+          Going shopping anyway? Start a group and keep your shares, shopping
+          list and pickup together.
+        </Text>
+        <Button onPress={() => onStart("register")}>Get started</Button>
+        <Button secondary onPress={() => onStart("login")}>
+          I already have an account
+        </Button>
+      </View>
+    </Screen>
   );
 }
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#fff" },
-  content: {
-    padding: 24,
-    gap: 14,
-    width: "100%",
-    maxWidth: 560,
-    alignSelf: "center",
-  },
-  brand: {
-    fontSize: 30,
-    fontWeight: "700",
-    color: "#0f1b2a",
-    marginBottom: 32,
-  },
-  title: { fontSize: 32, fontWeight: "700", color: "#0f1b2a" },
-  heading: { fontSize: 20, fontWeight: "600", marginTop: 20 },
-  muted: { color: "#576780", fontSize: 16, lineHeight: 24 },
-  input: {
-    borderWidth: 1,
-    borderColor: "#cbd2da",
-    borderRadius: 8,
-    padding: 14,
-    fontSize: 16,
-    // Reset tracking when iOS reuses a verification-code text input.
-    letterSpacing: 0,
-    minHeight: 48,
-  },
-  passwordField: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#cbd2da",
-    borderRadius: 8,
-  },
-  passwordInput: { flex: 1, minWidth: 0, borderWidth: 0 },
-  passwordToggle: {
-    minWidth: 48,
-    minHeight: 48,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  button: {
-    backgroundColor: "#142234",
-    padding: 16,
-    borderRadius: 8,
-    minHeight: 50,
-    alignItems: "center",
-  },
-  buttonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
-  link: { paddingVertical: 14, minHeight: 48 },
-  error: { color: "#a22222", lineHeight: 22 },
-  lead: { color: "#2b3a4d", fontSize: 18, lineHeight: 27 },
-  steps: { gap: 18, marginTop: 16, marginBottom: 4 },
-  step: { flexDirection: "row", gap: 14, alignItems: "flex-start" },
-  stepIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "#f4f6f8",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  stepTitle: { fontSize: 17, fontWeight: "600", color: "#0f1b2a" },
-  organizer: {
-    flexDirection: "row",
-    gap: 12,
-    alignItems: "flex-start",
-    borderTopWidth: 1,
-    borderTopColor: "#d5dce4",
-    paddingTop: 16,
-    marginBottom: 12,
-  },
-  invite: {
-    flexDirection: "row",
-    gap: 10,
-    alignItems: "flex-start",
-    backgroundColor: "#f4f6f8",
-    padding: 14,
-    borderRadius: 8,
-  },
-  secondaryButton: {
-    borderWidth: 1,
-    borderColor: "#cbd2da",
-    padding: 16,
-    borderRadius: 8,
-    minHeight: 50,
-    alignItems: "center",
-  },
-  secondaryText: { color: "#0f1b2a", fontWeight: "600", fontSize: 16 },
-  backLink: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    minHeight: 44,
-  },
-});

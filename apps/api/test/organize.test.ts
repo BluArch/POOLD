@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execute } from "../src/db.js";
 import { setup, draft } from "./helpers.js";
 test("Phase B: drafts, validation, publish and private invite privacy", async () => {
   const h = await setup();
@@ -77,6 +78,59 @@ test("Phase B: drafts, validation, publish and private invite privacy", async ()
         (o: any) => o.id === p,
       ),
     );
+  } finally {
+    await h.close();
+  }
+});
+
+test("Receipt previews: ordered first four available items and unchanged full legacy preview", async () => {
+  const h = await setup();
+  try {
+    const names = ["Zucchini", "Rice", "Beans", "Apples", "Coffee", "Noodles"];
+    const id = await h.create(
+      draft({
+        items: names.map((name) => ({
+          ...draft().items[0],
+          name,
+          category: "Pantry",
+        })),
+      }),
+    );
+    await execute(
+      h.db,
+      "UPDATE order_items SET available=FALSE WHERE order_id=? AND name=?",
+      [id, "Apples"],
+    );
+    await h.publish(id);
+    const result = await h.call(
+      "/orders?scope=discover",
+      "GET",
+      undefined,
+      h.tokens.jordan,
+    );
+    assert.equal(result.status, 200);
+    const order = result.body.find((o: { id: string }) => o.id === id);
+    assert.equal(order.preview, "Beans · Coffee · Noodles · Rice · Zucchini");
+    assert.deepEqual(
+      order.previewItems,
+      ["Beans", "Coffee", "Noodles", "Rice"].map((name) => ({
+        name,
+        category: "Pantry",
+        priceCents: 1001,
+        sharesPerPack: 5,
+        unit: null,
+      })),
+    );
+    await execute(
+      h.db,
+      "UPDATE order_items SET available=FALSE WHERE order_id=?",
+      [id],
+    );
+    const empty = (
+      await h.call(`/orders/${id}`, "GET", undefined, h.tokens.maya)
+    ).body.order;
+    assert.equal(empty.preview, "");
+    assert.deepEqual(empty.previewItems, []);
   } finally {
     await h.close();
   }

@@ -1,3 +1,4 @@
+import { palette as P } from "../theme";
 import React, { useState } from "react";
 import { View, Text, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -11,8 +12,9 @@ import {
   shareSizes,
   money,
 } from "@poold/contracts";
-import { Field, CurrencyField, Choice, styles, C } from "./ui";
+import { Field, CurrencyField, Choice, styles } from "./ui";
 import { Collapsible, QuantityStepper } from "./Sections";
+import { ItemIcon } from "./ItemIcon";
 import { Select } from "./Pickers";
 
 /** What the organizer edits. Everything else is worked out from this. */
@@ -187,7 +189,7 @@ export function ItemEditor({
         <View
           style={{
             borderWidth: 1,
-            borderColor: C.line,
+            borderColor: P.line,
             borderRadius: 10,
             overflow: "hidden",
           }}
@@ -201,12 +203,15 @@ export function ItemEditor({
               style={({ pressed }) => ({
                 padding: 14,
                 gap: 2,
-                backgroundColor: pressed ? C.soft : "#fff",
+                backgroundColor: pressed ? P.paper : P.paper,
                 borderTopWidth: i ? 1 : 0,
-                borderTopColor: "#eef1f4",
+                borderTopColor: P.line,
               })}
             >
-              <Text style={styles.text}>{c.name}</Text>
+              <View style={styles.row}>
+                <ItemIcon item={c} size={26} />
+                <Text style={[styles.h3, { flex: 1 }]}>{c.name}</Text>
+              </View>
               <Text style={styles.muted}>
                 {plural(c.packUnits, c.unit)} ({c.unitDetail}) ·{" "}
                 {money(c.priceCents)} · {c.category}
@@ -232,13 +237,13 @@ export function ItemEditor({
               flexDirection: "row",
               gap: 10,
               alignItems: "center",
-              backgroundColor: pressed ? C.soft : "#fff",
+              backgroundColor: pressed ? P.paper : P.paper,
               borderTopWidth: 1,
-              borderTopColor: C.line,
+              borderTopColor: P.line,
             })}
           >
-            <Ionicons name="create-outline" size={20} color={C.blue} />
-            <Text style={[styles.text, { color: C.blue }]}>
+            <Ionicons name="create-outline" size={20} color={P.herbText} />
+            <Text style={[styles.text, { color: P.herbText }]}>
               Something else — enter it myself
             </Text>
           </Pressable>
@@ -264,13 +269,16 @@ export function ItemEditor({
   return (
     <View style={{ gap: 12 }}>
       <View style={styles.between}>
-        <Text style={[styles.h3, { flex: 1 }]}>{title}</Text>
+        <ItemIcon item={d} size={48} />
+        <Text style={[styles.h3, { flex: 1 }]}>{d.name || title}</Text>
         <Pressable
           accessibilityRole="button"
           onPress={() => onChange(emptyDraft())}
-          style={{ padding: 8 }}
+          style={{ padding: 8, minHeight: 44, justifyContent: "center" }}
         >
-          <Text style={{ color: C.blue, fontWeight: "600" }}>Change item</Text>
+          <Text style={{ color: P.herbText, fontWeight: "600" }}>
+            Change item
+          </Text>
         </Pressable>
       </View>
 

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Text } from "react-native";
+import { Text, View } from "react-native";
 import { router } from "expo-router";
 import { Screen, Field, Button, ErrorText, styles } from "../../components/ui";
 export default function Invite() {
@@ -7,38 +7,40 @@ export default function Invite() {
     [error, setError] = useState("");
   return (
     <Screen
-      title="Join a private group."
+      title="Join with invite"
       subtitle="Use the invite your organizer shared."
       back
     >
-      <Field
-        label="Invite link"
-        value={value}
-        onChangeText={setValue}
-        autoCapitalize="none"
-        multiline
-      />
-      <Text style={styles.muted}>
-        Invite links open a preview. You join when you confirm your shares.
-      </Text>
-      <ErrorText message={error} />
-      <Button
-        onPress={() => {
-          const match = value.match(
-            /(?:order\/|orders\/)([a-f0-9-]{36})\?invite=([a-f0-9]{64})/,
-          );
-          if (!match) {
-            setError("Enter a complete POOLD invite link.");
-            return;
-          }
-          router.push({
-            pathname: "/(tabs)/order/[id]",
-            params: { id: match[1], invite: match[2] },
-          });
-        }}
-      >
-        View group
-      </Button>
+      <View style={styles.section}>
+        <Field
+          label="Invite link"
+          value={value}
+          onChangeText={setValue}
+          autoCapitalize="none"
+          multiline
+        />
+        <Text style={styles.muted}>
+          Invite links open a preview. You join when you confirm your shares.
+        </Text>
+        <ErrorText message={error} />
+        <Button
+          onPress={() => {
+            const match = value.match(
+              /(?:order\/|orders\/)([a-f0-9-]{36})\?invite=([a-f0-9]{64})/,
+            );
+            if (!match) {
+              setError("Enter a complete POOLD invite link.");
+              return;
+            }
+            router.push({
+              pathname: "/(tabs)/order/[id]",
+              params: { id: match[1], invite: match[2] },
+            });
+          }}
+        >
+          View group
+        </Button>
+      </View>
     </Screen>
   );
 }

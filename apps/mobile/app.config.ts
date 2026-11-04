@@ -22,6 +22,7 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
+    "expo-font",
     "expo-secure-store",
     "expo-notifications",
     "expo-image-picker",

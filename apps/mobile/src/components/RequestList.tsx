@@ -1,8 +1,11 @@
+import { palette as P } from "../theme";
 import React, { useState } from "react";
 import { View, Text } from "react-native";
 import type { ProductRequest } from "@poold/contracts";
+import { ItemIcon } from "./ItemIcon";
+import { PriceTag } from "./Market";
 import { api, post } from "../api";
-import { Button, Field, ErrorText, styles, useAction, C } from "./ui";
+import { Button, Field, ErrorText, styles, useAction } from "./ui";
 
 const STATUS: Record<ProductRequest["status"], string> = {
   open: "",
@@ -10,7 +13,7 @@ const STATUS: Record<ProductRequest["status"], string> = {
   declined: "Not added this time",
 };
 
-/** A form to suggest a product. Used community-wide and inside a group. */
+/** A form to suggest a product for the current group order. */
 export function RequestForm({
   path,
   onDone,
@@ -130,20 +133,21 @@ export function RequestCard({
       ) : (
         <>
           <View style={styles.between}>
+            <ItemIcon item={{ name: q.name }} size={26} />
             <Text style={[styles.h3, { flex: 1 }]}>{q.name}</Text>
             {q.mine && <Text style={styles.pill}>Yours</Text>}
           </View>
           {!!q.note && <Text style={styles.muted}>{q.note}</Text>}
-          <Text style={styles.text}>
+          <PriceTag>
             {showTarget
               ? `${q.votes} of ${q.target} interested${q.votes >= q.target ? " · Target reached" : ""}`
               : `${q.votes} interested · asked by ${q.mine ? "you" : q.creatorName}`}
-          </Text>
+          </PriceTag>
           {!open && (
             <Text
               style={[
                 styles.muted,
-                { color: q.status === "added" ? C.ink : C.muted },
+                { color: q.status === "added" ? P.ink : P.muted },
               ]}
             >
               {STATUS[q.status]}
@@ -187,7 +191,7 @@ export function RequestCard({
             !q.mine &&
             canVote && (
               <Button
-                secondary
+                variant="secondary"
                 disabled={a.busy}
                 onPress={() =>
                   void a.run(async () => {
@@ -199,7 +203,7 @@ export function RequestCard({
                   })
                 }
               >
-                {q.voted ? "Remove my interest" : "I want this too"}
+                {q.voted ? "Remove my interest" : "Count me in"}
               </Button>
             )
           )}
