@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, Share } from "react-native";
+import { View, Text, Share, Pressable } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import * as ExpoLinking from "expo-linking";
 import { router } from "expo-router";
 import {
@@ -37,7 +38,7 @@ import {
   draftToInput,
 } from "./ItemEditor";
 import { DateTimeField, roundUp } from "./Pickers";
-import { Collapsible, ProgressBar, SummaryLinks } from "./Sections";
+import { Collapsible, ProgressBar } from "./Sections";
 
 const STEPS = ["Shares", "Shop", "Hand out"];
 
@@ -91,12 +92,16 @@ export function OrganizerView({
   const readOnly = viewing < Math.min(current, 2);
   return (
     <>
-      <SummaryLinks
-        steps={STEPS}
-        current={current}
-        viewing={viewing}
-        onSelect={setViewing}
-      />
+      <StepBar current={current} viewing={viewing} onSelect={setViewing} />
+      {readOnly && (
+        <View style={[styles.note, styles.row, { gap: 10 }]}>
+          <Ionicons name="eye-outline" size={20} color={P.ink} />
+          <Text style={[styles.text, { flex: 1 }]}>
+            Looking back at {STEPS[viewing].toLowerCase()}. Nothing can be
+            changed here.
+          </Text>
+        </View>
+      )}
       {o.status === "completed" && viewing === 2 ? (
         <Done view={v} />
       ) : viewing === 0 ? (
@@ -108,6 +113,99 @@ export function OrganizerView({
       )}
       <MoreOptions view={v} refresh={refresh} />
     </>
+  );
+}
+
+/**
+ * The three organizer steps as one bar. Finished steps can be tapped to look
+ * back at them; the current step is highlighted; later steps are locked.
+ */
+function StepBar({
+  current,
+  viewing,
+  onSelect,
+}: {
+  current: number;
+  viewing: number;
+  onSelect: (i: number) => void;
+}) {
+  const active = Math.min(current, STEPS.length - 1);
+  return (
+    <View style={{ gap: 8 }}>
+      <View style={{ flexDirection: "row", gap: 6 }}>
+        {STEPS.map((label, i) => {
+          const done = i < current;
+          const isCurrent = i === active && current < STEPS.length;
+          const selected = i === viewing;
+          const locked = i > active;
+          return (
+            <Pressable
+              key={label}
+              accessibilityRole="tab"
+              accessibilityState={{ selected, disabled: locked }}
+              accessibilityLabel={`Step ${i + 1}, ${label}${done ? ", done" : isCurrent ? ", now" : ", later"}`}
+              disabled={locked}
+              onPress={() => onSelect(i)}
+              style={{
+                flex: 1,
+                borderRadius: 14,
+                paddingVertical: 10,
+                paddingHorizontal: 8,
+                gap: 4,
+                alignItems: "center",
+                backgroundColor: selected ? brand.greenDark : P.paper,
+                borderWidth: 1.5,
+                borderColor: selected ? brand.greenDark : P.line,
+                opacity: locked ? 0.5 : 1,
+              }}
+            >
+              <View
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 12,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: selected
+                    ? P.white
+                    : done
+                      ? brand.greenSoft
+                      : P.track,
+                }}
+              >
+                {done ? (
+                  <Ionicons
+                    name="checkmark"
+                    size={15}
+                    color={brand.greenDeep}
+                  />
+                ) : locked ? (
+                  <Ionicons name="lock-closed" size={12} color={P.muted} />
+                ) : (
+                  <Text style={[type.label, { fontSize: 12 }]}>{i + 1}</Text>
+                )}
+              </View>
+              <Text
+                style={[
+                  type.label,
+                  { fontSize: 13, color: selected ? P.white : P.ink },
+                ]}
+              >
+                {label}
+              </Text>
+              <Text
+                style={[
+                  type.mono,
+                  { fontSize: 11, color: selected ? brand.greenSoft : P.muted },
+                ]}
+              >
+                {done ? "Done · view" : isCurrent ? "Now" : "Later"}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 

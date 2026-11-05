@@ -21,10 +21,13 @@ export function OrderRow({
   order: o,
   showStatus = false,
   organize = false,
+  byYou = false,
 }: {
   order: OrderSummary;
   showStatus?: boolean;
   organize?: boolean;
+  /** Buyer view of a group you organize and also take shares in. */
+  byYou?: boolean;
 }) {
   const items =
     o.previewItems ??
@@ -100,7 +103,8 @@ export function OrderRow({
                 width: 36,
                 height: 36,
                 borderRadius: 18,
-                backgroundColor: organize ? brand.greenSoft : brand.yellowSoft,
+                backgroundColor:
+                  organize || byYou ? brand.greenSoft : brand.yellowSoft,
                 alignItems: "center",
                 justifyContent: "center",
               }}
@@ -110,7 +114,7 @@ export function OrderRow({
                   o.kind === "quick" ? "flash-outline" : "storefront-outline"
                 }
                 size={18}
-                color={organize ? brand.greenDeep : P.ink}
+                color={organize || byYou ? brand.greenDeep : P.ink}
               />
             </View>
             <View style={{ flex: 1 }}>
@@ -119,7 +123,11 @@ export function OrderRow({
                 {o.visibility === "private" ? " · Private" : ""}
               </Text>
               <Text style={[type.mono, { fontSize: 12 }]} numberOfLines={1}>
-                {organize ? "You organize" : `by ${organizer}`}
+                {organize
+                  ? "You organize"
+                  : byYou
+                    ? `Organized by you · ${o.myShares} ${o.myShares === 1 ? "share" : "shares"} for you`
+                    : `by ${organizer}`}
               </Text>
             </View>
           </View>

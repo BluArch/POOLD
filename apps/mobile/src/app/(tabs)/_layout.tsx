@@ -136,6 +136,7 @@ export default function TabsLayout() {
         "order/[id]",
         "requests",
         "claim/[id]",
+        "pay/[id]",
       ].map((name) => (
         <Tabs.Screen key={name} name={name} options={only(false)} />
       ))}

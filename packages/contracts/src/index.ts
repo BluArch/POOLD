@@ -184,6 +184,8 @@ export interface OrderSummary {
   organizerName: string;
   organizerId: string;
   joined: boolean;
+  /** Shares the signed-in user has claimed in this group. */
+  myShares: number;
   preview: string;
   previewItems?: {
     name: string;
@@ -246,6 +248,8 @@ export interface Member {
   /** Test-mode payment for this share; null until paid. No real money moves. */
   paidCents: number | null;
   paidAt: string | null;
+  /** Test receipt number, e.g. pi_test_… */
+  paymentRef: string | null;
 }
 export interface OrderView {
   order: OrderSummary;

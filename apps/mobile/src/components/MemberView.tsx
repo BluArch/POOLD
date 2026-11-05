@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, Linking, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Sheet } from "./Sheet";
+import { router } from "expo-router";
 import {
   type OrderView,
   type Item,
@@ -388,42 +388,56 @@ export function PickupDetails({
  */
 function PayShare({
   view: v,
-  refresh,
 }: {
   view: OrderView;
   refresh: () => Promise<void>;
 }) {
-  const a = useAction(),
-    [sheet, setSheet] = useState(false);
+  const a = useAction();
   const m = v.mine!,
     o = v.order;
   if (m.paidCents !== null)
     return (
       <View style={[styles.card, styles.row]}>
         <Ionicons name="checkmark-circle" size={24} color={brand.greenDark} />
-        <Text style={[styles.text, { flex: 1 }]}>
-          Paid {money(m.paidCents)}
-        </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.text}>Paid {money(m.paidCents)}</Text>
+          {!!m.paidAt && <Text style={type.mono}>{when(m.paidAt)}</Text>}
+        </View>
         <Badge tone="good">Test payment</Badge>
       </View>
     );
   if (!["ready", "completed"].includes(o.status))
     return (
-      <Text style={[styles.muted, { textAlign: "center" }]}>
-        You’ll pay after shopping, once the final price is known.
-      </Text>
+      <View style={[styles.note, styles.row]}>
+        <Ionicons name="card-outline" size={20} color={P.ink} />
+        <Text style={[styles.text, { flex: 1 }]}>
+          You’ll pay here after shopping, once the final price is known.
+        </Text>
+      </View>
     );
+  // Stripe test key on the server → Stripe's hosted test checkout.
+  // Otherwise → POOLD's own step-by-step test checkout screen.
   const start = () =>
     a.run(async () => {
-      const r = await post<{ mode: string; url?: string }>(
-        `/orders/${o.id}/pay`,
-      );
-      if (r.mode === "demo" || !r.url) setSheet(true);
-      else if (Platform.OS === "web") window.location.assign(r.url);
+      if (v.payments !== "stripe_test") {
+        router.push({ pathname: "/(tabs)/pay/[id]", params: { id: o.id } });
+        return;
+      }
+      const r = await post<{ url?: string }>(`/orders/${o.id}/pay`);
+      if (!r.url)
+        throw new Error("Stripe test checkout didn’t open. Try again.");
+      if (Platform.OS === "web") window.location.assign(r.url);
       else await Linking.openURL(r.url);
     });
   return (
-    <>
+    <View style={[styles.card, { gap: 10 }]}>
+      <View style={styles.between}>
+        <View>
+          <Text style={styles.h2}>Pay for your share</Text>
+          <Text style={type.mono}>Final price after shopping</Text>
+        </View>
+        <Text style={type.total}>{money(v.myEstimateCents)}</Text>
+      </View>
       <Button
         icon="card-outline"
         disabled={a.busy}
@@ -431,44 +445,10 @@ function PayShare({
       >
         {`Pay ${money(v.myEstimateCents)}`}
       </Button>
-      <Text style={[styles.muted, { textAlign: "center", fontSize: 13 }]}>
-        Test mode. No real money is charged.
+      <Text style={[type.mono, { textAlign: "center" }]}>
+        Test mode: no real money is charged.
       </Text>
       <ErrorText message={a.error} />
-      <Sheet
-        title="Test payment"
-        visible={sheet}
-        onClose={() => setSheet(false)}
-      >
-        <View
-          style={{
-            backgroundColor: brand.yellowSoft,
-            borderRadius: 18,
-            padding: 16,
-            gap: 6,
-          }}
-        >
-          <Text style={type.mono}>Your share of {o.name}</Text>
-          <Text style={type.total}>{money(v.myEstimateCents)}</Text>
-          <Text style={type.mono}>Paid to {o.organizerName}</Text>
-        </View>
-        <Text style={styles.muted}>
-          This is a demo. Nothing is charged and no card is needed.
-        </Text>
-        <Button
-          disabled={a.busy}
-          onPress={() =>
-            void a.run(async () => {
-              await post(`/orders/${o.id}/pay/demo`);
-              setSheet(false);
-              await refresh();
-            })
-          }
-        >
-          {a.busy ? "Paying…" : `Pay ${money(v.myEstimateCents)}`}
-        </Button>
-        <ErrorText message={a.error} />
-      </Sheet>
-    </>
+    </View>
   );
 }

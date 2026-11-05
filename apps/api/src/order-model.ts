@@ -62,8 +62,8 @@ export async function summary(
 ): Promise<OrderSummary> {
   const stats = await first(
     db,
-    `SELECT (SELECT COUNT(*) FROM memberships WHERE order_id=?) AS member_count,(SELECT name FROM users WHERE id=?) AS organizer_name,EXISTS(SELECT 1 FROM memberships WHERE order_id=? AND user_id=?) AS joined,(SELECT GROUP_CONCAT(name ORDER BY name SEPARATOR ' · ') FROM order_items WHERE order_id=? AND available=TRUE) AS preview`,
-    [o.id, o.organizer_id, o.id, uid, o.id],
+    `SELECT (SELECT COUNT(*) FROM memberships WHERE order_id=?) AS member_count,(SELECT name FROM users WHERE id=?) AS organizer_name,EXISTS(SELECT 1 FROM memberships WHERE order_id=? AND user_id=?) AS joined,(SELECT COALESCE(SUM(c.quantity),0) FROM share_claims c JOIN order_items i ON i.id=c.item_id WHERE i.order_id=? AND c.user_id=?) AS my_shares,(SELECT GROUP_CONCAT(name ORDER BY name SEPARATOR ' · ') FROM order_items WHERE order_id=? AND available=TRUE) AS preview`,
+    [o.id, o.organizer_id, o.id, uid, o.id, uid, o.id],
   );
   const previews = await rows(
     db,
@@ -89,6 +89,7 @@ export async function summary(
     organizerName: stats.organizer_name,
     organizerId: o.organizer_id,
     joined: !!stats.joined,
+    myShares: Number(stats.my_shares),
     preview: stats.preview ?? "",
     previewItems: previews.map((i) => ({
       name: i.name,
@@ -189,6 +190,7 @@ export async function orderView(
       estimateCents: claims.reduce((n, c) => n + c.estimateCents, 0),
       paidCents: m.paid_cents ?? null,
       paidAt: m.paid_at ? iso(m.paid_at) : null,
+      paymentRef: m.payment_ref ?? null,
     });
   }
   const ct = await first(

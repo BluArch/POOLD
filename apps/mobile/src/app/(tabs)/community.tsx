@@ -37,28 +37,49 @@ const HOW = [
 
 /** Short starting point for people who haven't joined anything yet. */
 function HowItWorks() {
+  const [open, setOpen] = useState(false);
   return (
-    <View style={[styles.card, { backgroundColor: brand.yellowSoft }]}>
-      <Text style={styles.h3}>How it works</Text>
-      {HOW.map((step, n) => (
-        <View key={step.text} style={styles.row}>
-          <View
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 16,
-              backgroundColor: P.paper,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Ionicons name={step.icon} size={17} color={P.ink} />
-          </View>
-          <Text style={[styles.text, { flex: 1 }]}>
-            {n + 1}. {step.text}
-          </Text>
+    <View
+      style={[styles.card, { backgroundColor: brand.yellowSoft, padding: 0 }]}
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        onPress={() => setOpen(!open)}
+        style={[styles.row, { minHeight: 52, paddingHorizontal: 16 }]}
+      >
+        <Ionicons name="help-circle-outline" size={20} color={P.ink} />
+        <Text style={[styles.h3, { flex: 1 }]}>How it works</Text>
+        <Text style={T.mono}>{open ? "Hide" : "3 steps"}</Text>
+        <Ionicons
+          name={open ? "chevron-up" : "chevron-down"}
+          size={18}
+          color={P.muted}
+        />
+      </Pressable>
+      {open && (
+        <View style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 10 }}>
+          {HOW.map((step, n) => (
+            <View key={step.text} style={styles.row}>
+              <View
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 16,
+                  backgroundColor: P.paper,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Ionicons name={step.icon} size={17} color={P.ink} />
+              </View>
+              <Text style={[styles.text, { flex: 1 }]}>
+                {n + 1}. {step.text}
+              </Text>
+            </View>
+          ))}
         </View>
-      ))}
+      )}
     </View>
   );
 }

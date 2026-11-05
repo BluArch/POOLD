@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { Text, View } from "react-native";
+import { type } from "../../theme";
 import { router } from "expo-router";
 import type { OrderSummary } from "@poold/contracts";
 import {
@@ -16,17 +18,26 @@ type Frame = "upcoming" | "past";
 const ended = (o: OrderSummary) =>
   o.status === "completed" || o.status === "cancelled";
 
-/** Buyer side: the groups you've joined. Groups you organize live in Organizing. */
+/** Buyer side: groups you've joined, plus your own shares in groups you run. */
 export default function MyOrders() {
   const r = useResource<OrderSummary[]>("/orders?scope=mine");
   const session = useSession();
   const [frame, setFrame] = useState<Frame>("upcoming");
+  // Groups you organize show here too when you took shares in them,
+  // in their own section so it's clear you're also the organizer.
+  const own = (r.data ?? []).filter(
+    (o) => o.organizerId === session.user?.id && o.myShares > 0,
+  );
   const joined = (r.data ?? []).filter(
     (o) => o.organizerId !== session.user?.id,
   );
-  const forFrame = (f: Frame) =>
-    joined.filter((o) => (f === "past" ? ended(o) : !ended(o)));
-  const list = forFrame(frame).sort(
+  const inFrame = (f: Frame, list: OrderSummary[]) =>
+    list.filter((o) => (f === "past" ? ended(o) : !ended(o)));
+  const forFrame = (f: Frame) => [...inFrame(f, joined), ...inFrame(f, own)];
+  const ownList = inFrame(frame, own).sort(
+    (a, b) => Date.parse(a.pickupAt) - Date.parse(b.pickupAt),
+  );
+  const list = inFrame(frame, joined).sort(
     (a, b) => Date.parse(a.pickupAt) - Date.parse(b.pickupAt),
   );
   return (
@@ -57,7 +68,20 @@ export default function MyOrders() {
       {list.map((o) => (
         <OrderRow key={o.id} order={o} showStatus />
       ))}
-      {r.data && !list.length && (
+      {ownList.length > 0 && (
+        <View>
+          <Text style={[type.section, { marginBottom: 4 }]}>
+            Organized by you
+          </Text>
+          <Text style={[type.mono, { marginBottom: 10 }]}>
+            Your own shares in groups you run
+          </Text>
+          {ownList.map((o) => (
+            <OrderRow key={o.id} order={o} showStatus byYou />
+          ))}
+        </View>
+      )}
+      {r.data && !list.length && !ownList.length && (
         <EmptyState
           icon="bag-handle-outline"
           title={frame === "past" ? "Nothing here yet" : "No shares yet"}

@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { Router } from "express";
 import type { Pool } from "mysql2/promise";
 import { z } from "zod";
@@ -161,8 +162,9 @@ export function payments(db: Pool, appUrl: string) {
       req.params.id as string,
       req.user!.id,
     );
-    await markPaid(db, o, req.user!.id, cents, "demo", null);
-    res.json({ ok: true });
+    const ref = `pi_test_${randomBytes(12).toString("hex")}`;
+    await markPaid(db, o, req.user!.id, cents, "demo", ref);
+    res.json({ ok: true, ref, amountCents: cents });
   });
   return r;
 }
