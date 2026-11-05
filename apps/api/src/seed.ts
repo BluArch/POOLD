@@ -92,13 +92,26 @@ export async function seed(db: Pool) {
     ],
   ];
   for (const [name, store, who, kind, items] of samples) {
-    if (
-      await first(db, "SELECT id FROM orders WHERE name=? AND organizer_id=?", [
-        name,
-        `demo-${who}`,
-      ])
-    )
-      continue;
+    const existing = await first(
+      db,
+      "SELECT id,status,deadline FROM orders WHERE name=? AND organizer_id=?",
+      [name, `demo-${who}`],
+    );
+    // Keep sample groups that are still joinable or mid-way through (so a
+    // demo in progress isn't wiped). Replace ones that expired or finished,
+    // so every account always has open groups to browse.
+    const stale =
+      existing &&
+      (["completed", "cancelled", "locked"].includes(existing.status) ||
+        (existing.status === "open" &&
+          new Date(existing.deadline).getTime() < Date.now() + 6 * 3600000));
+    if (existing && !stale) continue;
+    if (existing) {
+      await execute(db, "DELETE FROM collection_tokens WHERE order_id=?", [
+        existing.id,
+      ]);
+      await execute(db, "DELETE FROM orders WHERE id=?", [existing.id]);
+    }
     const at = (h: number) => new Date(Date.now() + h * 3600000).toISOString();
     await transaction(db, async (c) => {
       const oid = await insertDraft(
@@ -109,10 +122,11 @@ export async function seed(db: Pool) {
           kind,
           visibility: "public",
           maxMembers: 6,
-          deadline: at(24),
-          purchaseAt: at(26),
-          pickupAt: at(28),
-          pickupEnd: at(30),
+          // Three days to join, so sample groups last through a class demo.
+          deadline: at(72),
+          purchaseAt: at(74),
+          pickupAt: at(76),
+          pickupEnd: at(78),
           pickupLocation: "UVic SUB main lobby",
           pickupLat: 48.4649,
           pickupLng: -123.3089,

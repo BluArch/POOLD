@@ -13,7 +13,8 @@ export default function TabsLayout() {
   const role = useRole();
   const s = useSession(),
     params = useLocalSearchParams<{ id?: string; invite?: string }>(),
-    insets = useSafeAreaInsets();
+    insets = useSafeAreaInsets(),
+    bottom = Math.min(insets.bottom, 20);
   useEffect(() => {
     if (s.user?.verified)
       return listenForPush((id) =>
@@ -40,9 +41,9 @@ export default function TabsLayout() {
     ({ focused }: { focused: boolean; color: unknown; size: number }) => (
       <View
         style={{
-          width: 56,
-          height: 30,
-          borderRadius: 15,
+          width: 48,
+          height: 26,
+          borderRadius: 13,
           alignItems: "center",
           justifyContent: "center",
           backgroundColor: focused ? role.colors.tab : "transparent",
@@ -50,7 +51,7 @@ export default function TabsLayout() {
       >
         <Ionicons
           name={focused ? name : (`${name}-outline` as const)}
-          size={22}
+          size={20}
           color={focused ? P.ink : P.muted}
         />
       </View>
@@ -75,16 +76,18 @@ export default function TabsLayout() {
         tabBarStyle: {
           backgroundColor: P.paper,
           borderTopColor: P.line,
-          height: 70 + insets.bottom,
-          paddingTop: 6,
-          paddingBottom: Math.max(8, insets.bottom),
+          // Compact bar: phones' home-indicator space is capped so the tabs
+          // never take over the screen.
+          height: 56 + bottom,
+          paddingTop: 4,
+          paddingBottom: Math.max(6, bottom),
         },
         tabBarLabel: ({ focused, color, children }) => (
           <Text
             style={{
               fontFamily: focused ? fonts.bold : fonts.medium,
-              fontSize: 11,
-              lineHeight: 16,
+              fontSize: 10.5,
+              lineHeight: 14,
               color: typeof color === "string" ? color : P.muted,
             }}
           >

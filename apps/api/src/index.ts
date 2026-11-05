@@ -2,8 +2,16 @@ import { database } from "./db.js";
 import { runJobs } from "./jobs.js";
 import { dispatchPush, firebaseSender } from "./push.js";
 import { createApp } from "./app.js";
+import { seed } from "./seed.js";
 const db = database();
 await db.query("SELECT 1");
+// Local demo: refresh the sample groups on every start, so everyone who signs
+// up (and Maya) always sees open groups to browse.
+if (
+  process.env.NODE_ENV !== "production" &&
+  process.env.DEMO_ENABLED === "true"
+)
+  await seed(db).catch((e) => console.error("Demo seed failed:", e));
 const app = createApp(db);
 const server = app.listen(Number(process.env.PORT ?? 4000), "0.0.0.0", () =>
   console.log(`POOLD API ready on port ${process.env.PORT ?? 4000}`),

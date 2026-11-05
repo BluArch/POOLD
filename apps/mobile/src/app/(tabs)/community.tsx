@@ -37,7 +37,8 @@ const HOW = [
 
 /** Short starting point for people who haven't joined anything yet. */
 function HowItWorks() {
-  const [open, setOpen] = useState(false);
+  // Open at first so new people see it; they can fold it away.
+  const [open, setOpen] = useState(true);
   return (
     <View
       style={[styles.card, { backgroundColor: brand.yellowSoft, padding: 0 }]}
