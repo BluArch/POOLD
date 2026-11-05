@@ -13,7 +13,10 @@ import {
   ErrorText,
   styles,
 } from "../components/ui";
-import { palette as P } from "../theme";
+import { palette as P, type, brand, roles, fonts, shadow } from "../theme";
+import { Segmented } from "../components/Sections";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { ScrollView } from "react-native";
 import { Onboarding } from "../components/Onboarding";
 import { getPref, setPref } from "../storage";
 export default function Home() {
@@ -27,14 +30,17 @@ export default function Home() {
     [passwordVisible, setPasswordVisible] = useState(false),
     [name, setName] = useState(""),
     [mode, setMode] = useState<"login" | "register">("login"),
-    // Intro slides: shown once on first open, then straight to sign-in.
-    [intro, setIntro] = useState<boolean | null>(null),
+    // Signed-out flow: landing page → one-time walkthrough → sign in / sign up.
+    [stage, setStage] = useState<"landing" | "intro" | "form">("landing"),
+    // After the walkthrough: open the form, or sign straight into the demo.
+    [afterIntro, setAfterIntro] = useState<"form" | "demo">("form"),
+    [seenIntro, setSeenIntro] = useState<boolean | null>(null),
     [forgot, setForgot] = useState(false),
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
   useEffect(() => {
-    void getPref("poold.onboarded").then((v) => setIntro(v !== "yes"));
+    void getPref("poold.onboarded").then((v) => setSeenIntro(v === "yes"));
   }, []);
   const run = async (work: () => Promise<unknown>) => {
     setBusy(true);
@@ -47,7 +53,18 @@ export default function Home() {
       setBusy(false);
     }
   };
-  if (s.loading || intro === null) return <Loading />;
+  if (s.loading || seenIntro === null) return <Loading />;
+  const demo = () => run(() => s.login("/auth/demo", { userId: "demo-maya" }));
+  /** Leave the landing page; the walkthrough shows only the first time. */
+  const next = (then: "login" | "register" | "demo") => {
+    setError("");
+    setMessage("");
+    if (then !== "demo") setMode(then);
+    setAfterIntro(then === "demo" ? "demo" : "form");
+    if (!seenIntro) setStage("intro");
+    else if (then === "demo") void demo();
+    else setStage("form");
+  };
   if (forgot)
     return (
       <ForgotPassword
@@ -85,22 +102,66 @@ export default function Home() {
         }}
       />
     );
-  if (intro && !s.error)
+  if (stage === "landing" && !s.error)
+    return (
+      <Landing
+        invited={!!query.order}
+        demoEnabled={s.demoEnabled}
+        busy={busy}
+        error={error}
+        onNext={next}
+      />
+    );
+  if (stage === "intro")
     return (
       <Onboarding
-        onDone={(next) => {
+        doneLabel={
+          afterIntro === "demo"
+            ? "Open the demo"
+            : mode === "login"
+              ? "Continue to sign in"
+              : "Create my account"
+        }
+        onDone={() => {
           void setPref("poold.onboarded", "yes");
-          setMode(next);
-          setError("");
-          setMessage("");
-          setIntro(false);
+          setSeenIntro(true);
+          setStage("form");
+          if (afterIntro === "demo") void demo();
         }}
       />
     );
   return (
     <Screen
       title={mode === "login" ? "Welcome back" : "Create your account"}
-      subtitle="Split bulk groceries with students near you."
+      subtitle={
+        mode === "login"
+          ? "Sign in to see your groups."
+          : "It takes a minute. Use your UVic email if you have one."
+      }
+      stamp={
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setStage("landing")}
+          style={{ minHeight: 44, justifyContent: "center" }}
+        >
+          <Text style={styles.label}>Back</Text>
+        </Pressable>
+      }
+      header={
+        <Segmented<"login" | "register">
+          options={[
+            { value: "login", label: "Sign in" },
+            { value: "register", label: "Create account" },
+          ]}
+          value={mode}
+          onChange={(m) => {
+            setError("");
+            setMessage("");
+            setPasswordVisible(false);
+            setMode(m);
+          }}
+        />
+      }
     >
       {!!query.order && (
         <View style={styles.note}>
@@ -203,39 +264,17 @@ export default function Home() {
               ? "Sign in"
               : "Create account"}
         </Button>
-        <Button
-          secondary
-          onPress={() => {
-            setError("");
-            setMessage("");
-            setPasswordVisible(false);
-            setMode(mode === "login" ? "register" : "login");
-          }}
-        >
-          {mode === "login" ? "Create an account" : "Back to sign in"}
-        </Button>
       </View>
+      {s.demoEnabled && <DemoCard busy={busy} onPress={() => void demo()} />}
       <Pressable
         accessibilityRole="link"
-        onPress={() => setIntro(true)}
+        onPress={() => setStage("intro")}
         style={{ alignSelf: "center", minHeight: 44, justifyContent: "center" }}
       >
-        <Text style={[styles.label, { color: P.muted }]}>What is POOLD?</Text>
+        <Text style={[styles.label, { color: P.muted }]}>
+          How does POOLD work?
+        </Text>
       </Pressable>
-      {s.demoEnabled && (
-        <View style={styles.section}>
-          <Text style={styles.h3}>Try the demo</Text>
-          <Button
-            secondary
-            disabled={busy}
-            onPress={() =>
-              void run(() => s.login("/auth/demo", { userId: "demo-maya" }))
-            }
-          >
-            Continue as Maya
-          </Button>
-        </View>
-      )}
     </Screen>
   );
 }
@@ -352,5 +391,198 @@ function ForgotPassword({
         </Button>
       </View>
     </Screen>
+  );
+}
+
+/** Big, obvious way to look around without an account. */
+function DemoCard({ busy, onPress }: { busy: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Try the demo as Maya, no account needed"
+      disabled={busy}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        borderRadius: 22,
+        borderWidth: 2,
+        borderColor: brand.orange,
+        borderStyle: "dashed",
+        backgroundColor: "#FFF7F2",
+        padding: 16,
+        gap: 12,
+        opacity: busy ? 0.6 : pressed ? 0.85 : 1,
+      })}
+    >
+      <View style={[styles.row, { gap: 12 }]}>
+        <View
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: 24,
+            backgroundColor: brand.orange,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Text
+            style={{ fontFamily: fonts.title, fontSize: 20, color: P.white }}
+          >
+            M
+          </Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text
+            style={[
+              type.mono,
+              { color: brand.orangeDeep, fontFamily: fonts.label },
+            ]}
+          >
+            NO ACCOUNT NEEDED
+          </Text>
+          <Text style={type.cardTitle}>Try the demo as Maya</Text>
+          <Text style={type.mono}>Sample groups are ready to explore.</Text>
+        </View>
+      </View>
+      <View
+        style={{
+          backgroundColor: P.ink,
+          borderRadius: 999,
+          minHeight: 48,
+          flexDirection: "row",
+          gap: 8,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Ionicons name="play" size={16} color={P.white} />
+        <Text style={[type.label, { color: P.white, fontSize: 15 }]}>
+          {busy ? "Opening…" : "Open the demo"}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+/** First screen for signed-out visitors. */
+function Landing({
+  invited,
+  demoEnabled,
+  busy,
+  error,
+  onNext,
+}: {
+  invited: boolean;
+  demoEnabled: boolean;
+  busy: boolean;
+  error: string;
+  onNext: (then: "login" | "register" | "demo") => void;
+}) {
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: roles.buying.header }}>
+      <ScrollView
+        style={{ backgroundColor: P.kraft }}
+        contentContainerStyle={{ flexGrow: 1 }}
+      >
+        <View
+          style={{
+            backgroundColor: roles.buying.header,
+            borderBottomLeftRadius: 32,
+            borderBottomRightRadius: 32,
+            paddingHorizontal: 20,
+            paddingTop: 16,
+            paddingBottom: 28,
+            gap: 14,
+          }}
+        >
+          <View
+            style={{
+              width: "100%",
+              maxWidth: 600,
+              alignSelf: "center",
+              gap: 14,
+            }}
+          >
+            <Text
+              style={{
+                fontFamily: fonts.title,
+                fontSize: 26,
+                letterSpacing: -0.8,
+                color: P.ink,
+              }}
+            >
+              poold
+            </Text>
+            <Text style={[type.title, { fontSize: 40, lineHeight: 44 }]}>
+              Good things, shared.
+            </Text>
+            <Text
+              style={[
+                type.body,
+                { fontSize: 16, color: roles.buying.headerMuted },
+              ]}
+            >
+              Split bulk groceries with students near you. Take only the share
+              you need.
+            </Text>
+            <View style={[styles.row, { gap: 8, flexWrap: "wrap" }]}>
+              {[
+                ["people-outline", "Join a group"],
+                ["pie-chart-outline", "Pick a share"],
+                ["bag-check-outline", "Pick it up"],
+              ].map(([icon, label]) => (
+                <View
+                  key={label}
+                  style={[
+                    styles.row,
+                    {
+                      gap: 6,
+                      backgroundColor: P.paper,
+                      borderRadius: 999,
+                      paddingVertical: 7,
+                      paddingHorizontal: 12,
+                      ...shadow,
+                      shadowOpacity: 0.05,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={icon as React.ComponentProps<typeof Ionicons>["name"]}
+                    size={15}
+                    color={P.ink}
+                  />
+                  <Text style={[type.label, { fontSize: 13 }]}>{label}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        </View>
+        <View
+          style={{
+            width: "100%",
+            maxWidth: 600,
+            alignSelf: "center",
+            padding: 20,
+            gap: 12,
+          }}
+        >
+          {invited && (
+            <View style={styles.note}>
+              <Text style={styles.text}>
+                You’ve been invited to a group. Sign in or create an account to
+                see it.
+              </Text>
+            </View>
+          )}
+          {demoEnabled && (
+            <DemoCard busy={busy} onPress={() => onNext("demo")} />
+          )}
+          <ErrorText message={error} />
+          <Button onPress={() => onNext("register")}>Get started</Button>
+          <Button secondary onPress={() => onNext("login")}>
+            I already have an account
+          </Button>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }

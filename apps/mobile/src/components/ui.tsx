@@ -10,6 +10,7 @@ import {
   Platform,
   ActivityIndicator,
   RefreshControl,
+  Modal,
   type TextInputProps,
   type StyleProp,
   type TextStyle,
@@ -29,6 +30,7 @@ import {
   type Role,
 } from "../theme";
 import { useRole, ROLE_HOME } from "../role";
+import { getPref, setPref } from "../storage";
 export const styles = StyleSheet.create({
   title: type.title,
   h2: type.section,
@@ -247,62 +249,150 @@ export function Screen({
   );
 }
 /** Switch between the buyer side and the organizer side of the app. */
+const SWITCH_TEXT: Record<Role, string> = {
+  buying: "You’ll see groups to join and the shares you’ve picked.",
+  organizing: "You’ll see the groups you run, plus tools to shop and hand out.",
+};
+/** Switch between the buyer side and the organizer side of the app. */
 export function RoleSwitch() {
   const { role, setRole } = useRole();
   const colors = roles[role];
+  const [asking, setAsking] = useState<Role | null>(null),
+    [dontAsk, setDontAsk] = useState(false);
+  const go = (r: Role) => {
+    setAsking(null);
+    setRole(r);
+    router.navigate(ROLE_HOME[r]);
+  };
   return (
-    <View
-      accessibilityRole="tablist"
-      style={{
-        flexDirection: "row",
-        padding: 3,
-        borderRadius: 999,
-        backgroundColor: colors.headerLight
-          ? "rgba(22,22,22,0.07)"
-          : "rgba(255,255,255,0.18)",
-      }}
-    >
-      {(["buying", "organizing"] as const).map((r) => {
-        const selected = r === role;
-        return (
-          <Pressable
-            key={r}
-            accessibilityRole="tab"
-            accessibilityState={{ selected }}
-            accessibilityLabel={roles[r].label}
-            onPress={() => {
-              if (selected) return;
-              setRole(r);
-              router.navigate(ROLE_HOME[r]);
-            }}
-            style={{
-              minHeight: 36,
-              paddingHorizontal: 12,
-              borderRadius: 999,
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 5,
-              backgroundColor: selected ? P.white : "transparent",
-            }}
-          >
-            <Ionicons
-              name={roles[r].icon}
-              size={15}
-              color={selected ? roles[r].accent : colors.headerText}
-            />
-            <Text
+    <>
+      <View
+        accessibilityRole="tablist"
+        style={{
+          flexDirection: "row",
+          padding: 3,
+          borderRadius: 999,
+          backgroundColor: colors.headerLight
+            ? "rgba(22,22,22,0.07)"
+            : "rgba(255,255,255,0.18)",
+        }}
+      >
+        {(["buying", "organizing"] as const).map((r) => {
+          const selected = r === role;
+          return (
+            <Pressable
+              key={r}
+              accessibilityRole="tab"
+              accessibilityState={{ selected }}
+              accessibilityLabel={roles[r].label}
+              onPress={() => {
+                if (selected) return;
+                void getPref("poold.skipSwitchConfirm").then((skip) =>
+                  skip === "yes" ? go(r) : setAsking(r),
+                );
+              }}
               style={{
-                fontFamily: fonts.label,
-                fontSize: 13,
-                color: selected ? P.ink : colors.headerText,
+                minHeight: 36,
+                paddingHorizontal: 12,
+                borderRadius: 999,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 5,
+                backgroundColor: selected ? P.white : "transparent",
               }}
             >
-              {roles[r].label}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
+              <Ionicons
+                name={roles[r].icon}
+                size={15}
+                color={selected ? roles[r].accent : colors.headerText}
+              />
+              <Text
+                style={{
+                  fontFamily: fonts.label,
+                  fontSize: 13,
+                  color: selected ? P.ink : colors.headerText,
+                }}
+              >
+                {roles[r].label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <Modal
+        visible={!!asking}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAsking(null)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(22,22,22,0.45)",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          {asking && (
+            <View
+              accessibilityViewIsModal
+              style={{
+                width: "100%",
+                maxWidth: 380,
+                backgroundColor: P.paper,
+                borderRadius: 24,
+                padding: 22,
+                gap: 12,
+                alignItems: "center",
+              }}
+            >
+              <View
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 28,
+                  backgroundColor: roles[asking].tab,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Ionicons name={roles[asking].icon} size={26} color={P.ink} />
+              </View>
+              <Text
+                accessibilityRole="header"
+                style={[type.cardTitle, { textAlign: "center" }]}
+              >
+                Switch to {roles[asking].label.toLowerCase()}?
+              </Text>
+              <Text style={[styles.muted, { textAlign: "center" }]}>
+                {SWITCH_TEXT[asking]} You can switch back any time.
+              </Text>
+              <View style={{ alignSelf: "stretch" }}>
+                <Check
+                  label="Don’t ask me again"
+                  value={dontAsk}
+                  onChange={setDontAsk}
+                />
+              </View>
+              <View style={{ alignSelf: "stretch", gap: 8 }}>
+                <Button
+                  onPress={() => {
+                    if (dontAsk) void setPref("poold.skipSwitchConfirm", "yes");
+                    go(asking);
+                  }}
+                >
+                  {`Switch to ${roles[asking].label}`}
+                </Button>
+                <Button secondary onPress={() => setAsking(null)}>
+                  {`Stay on ${roles[role].label}`}
+                </Button>
+              </View>
+            </View>
+          )}
+        </View>
+      </Modal>
+    </>
   );
 }
 export function IconButton({

@@ -171,7 +171,7 @@ function DraftForm({ id }: { id?: string }) {
       title={id ? "Edit draft" : "New group"}
       subtitle={id ? undefined : "Save a draft, then publish when ready"}
       role="organizing"
-      back={!!id}
+      back
     >
       <View style={styles.card}>
         <Step n={1} title="The group" />

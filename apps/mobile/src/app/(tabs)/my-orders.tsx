@@ -31,7 +31,7 @@ export default function MyOrders() {
   );
   return (
     <Screen
-      title="My shares"
+      title="My groups"
       subtitle="Groups you’ve joined"
       roleSwitch
       onRefresh={() => void r.refresh()}

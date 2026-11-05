@@ -174,8 +174,10 @@ function Circle({
 /** Swipeable intro shown the first time someone opens the app. */
 export function Onboarding({
   onDone,
+  doneLabel = "Continue",
 }: {
-  onDone: (next: "register" | "login") => void;
+  onDone: () => void;
+  doneLabel?: string;
 }) {
   const [page, setPage] = useState(0),
     [width, setWidth] = useState(0);
@@ -216,7 +218,7 @@ export function Onboarding({
         {!last && (
           <Pressable
             accessibilityRole="button"
-            onPress={() => onDone("register")}
+            onPress={onDone}
             style={{ minHeight: 44, minWidth: 44, justifyContent: "center" }}
           >
             <Text style={[type.label, { color: dark ? P.white : P.ink }]}>
@@ -295,12 +297,7 @@ export function Onboarding({
           {slide.body}
         </Text>
         {last ? (
-          <>
-            <Button onPress={() => onDone("register")}>Get started</Button>
-            <Button secondary onPress={() => onDone("login")}>
-              I already have an account
-            </Button>
-          </>
+          <Button onPress={onDone}>{doneLabel}</Button>
         ) : (
           <Button onPress={() => go(page + 1)}>Next</Button>
         )}

@@ -5,7 +5,7 @@ import { listenForPush } from "../../push";
 import { Tabs, Redirect, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSession } from "../../session";
-import { Text } from "react-native";
+import { Text, View } from "react-native";
 import { palette as P, fonts } from "../../theme";
 import { useRole } from "../../role";
 import { Loading } from "../../components/ui";
@@ -34,14 +34,26 @@ export default function TabsLayout() {
       />
     );
   const buying = role.role === "buying";
+  // Active tab: filled icon on a coloured pill, so it's obvious where you are.
   const icon =
-    (name: React.ComponentProps<typeof Ionicons>["name"]) =>
-    ({ color, size }: { color: unknown; size: number }) => (
-      <Ionicons
-        name={name}
-        size={size}
-        color={typeof color === "string" ? color : P.muted}
-      />
+    (name: "home" | "albums" | "notifications" | "person") =>
+    ({ focused }: { focused: boolean; color: unknown; size: number }) => (
+      <View
+        style={{
+          width: 56,
+          height: 30,
+          borderRadius: 15,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: focused ? role.colors.tab : "transparent",
+        }}
+      >
+        <Ionicons
+          name={focused ? name : (`${name}-outline` as const)}
+          size={22}
+          color={focused ? P.ink : P.muted}
+        />
+      </View>
     );
   // Each role gets its own tabs; the other role's tabs are hidden, not removed,
   // so links between them keep working.
@@ -58,19 +70,19 @@ export default function TabsLayout() {
       backBehavior="history"
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: role.colors.accent,
+        tabBarActiveTintColor: P.ink,
         tabBarInactiveTintColor: P.muted,
         tabBarStyle: {
           backgroundColor: P.paper,
           borderTopColor: P.line,
-          height: 64 + insets.bottom,
+          height: 70 + insets.bottom,
           paddingTop: 6,
           paddingBottom: Math.max(8, insets.bottom),
         },
         tabBarLabel: ({ focused, color, children }) => (
           <Text
             style={{
-              fontFamily: focused ? fonts.label : fonts.medium,
+              fontFamily: focused ? fonts.bold : fonts.medium,
               fontSize: 11,
               lineHeight: 16,
               color: typeof color === "string" ? color : P.muted,
@@ -84,17 +96,17 @@ export default function TabsLayout() {
     >
       <Tabs.Screen
         name="community"
-        options={{
-          title: "Browse",
-          tabBarIcon: icon("search-outline"),
-          ...only(buying),
-        }}
+        options={{ title: "Home", tabBarIcon: icon("home"), ...only(buying) }}
+      />
+      <Tabs.Screen
+        name="hub"
+        options={{ title: "Home", tabBarIcon: icon("home"), ...only(!buying) }}
       />
       <Tabs.Screen
         name="my-orders"
         options={{
-          title: "My shares",
-          tabBarIcon: icon("bag-handle-outline"),
+          title: "My groups",
+          tabBarIcon: icon("albums"),
           ...only(buying),
         }}
       />
@@ -102,15 +114,7 @@ export default function TabsLayout() {
         name="organize"
         options={{
           title: "My groups",
-          tabBarIcon: icon("clipboard-outline"),
-          ...only(!buying),
-        }}
-      />
-      <Tabs.Screen
-        name="create"
-        options={{
-          title: "New group",
-          tabBarIcon: icon("add-circle-outline"),
+          tabBarIcon: icon("albums"),
           ...only(!buying),
         }}
       />
@@ -118,18 +122,23 @@ export default function TabsLayout() {
         name="updates"
         options={{
           title: "Updates",
-          tabBarIcon: icon("notifications-outline"),
+          tabBarIcon: icon("notifications"),
         }}
       />
       <Tabs.Screen
         name="account"
-        options={{ title: "Profile", tabBarIcon: icon("person-outline") }}
+        options={{ title: "Profile", tabBarIcon: icon("person") }}
       />
-      {["start", "invite", "order/[id]", "requests", "claim/[id]"].map(
-        (name) => (
-          <Tabs.Screen key={name} name={name} options={only(false)} />
-        ),
-      )}
+      {[
+        "create",
+        "start",
+        "invite",
+        "order/[id]",
+        "requests",
+        "claim/[id]",
+      ].map((name) => (
+        <Tabs.Screen key={name} name={name} options={only(false)} />
+      ))}
     </Tabs>
   );
 }

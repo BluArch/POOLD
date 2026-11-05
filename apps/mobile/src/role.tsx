@@ -5,7 +5,7 @@ import { getPref, setPref } from "./storage";
 /** Home screen for each role. */
 export const ROLE_HOME = {
   buying: "/(tabs)/community",
-  organizing: "/(tabs)/organize",
+  organizing: "/(tabs)/hub",
 } as const;
 
 type RoleState = {

@@ -63,6 +63,8 @@ type RoleColors = {
   headerMuted: string;
   /** True when the header is light, so controls on it use dark tints. */
   headerLight: boolean;
+  /** Pill behind the selected tab icon. */
+  tab: string;
   accent: string;
   soft: string;
   label: string;
@@ -76,6 +78,7 @@ export const roles: Record<Role, RoleColors> = {
     headerText: brand.black,
     headerMuted: "#6B5F3A",
     headerLight: true,
+    tab: "#F6E08A",
     accent: brand.orangeDeep,
     soft: brand.yellowSoft,
     label: "Buying",
@@ -86,6 +89,7 @@ export const roles: Record<Role, RoleColors> = {
     headerText: "#2F3A2A",
     headerMuted: "#55634D",
     headerLight: true,
+    tab: "#C5D4B6",
     accent: brand.greenDeep,
     soft: brand.greenSoft,
     label: "Organizing",
