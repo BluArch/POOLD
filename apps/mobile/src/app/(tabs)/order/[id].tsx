@@ -53,6 +53,14 @@ export default function Order() {
         void r.refresh();
       });
   }, [paid]);
+  // During pickup, check every few seconds so a confirmed code shows up
+  // on the buyer's phone (and the organizer's) without pulling to refresh.
+  const live = v?.order.status === "ready" || v?.order.status === "shopping";
+  useEffect(() => {
+    if (!live) return;
+    const timer = setInterval(() => void r.refresh(), 5000);
+    return () => clearInterval(timer);
+  }, [live, r.refresh]);
   const showOrganizer = !!v?.isOrganizer && mode === "organize";
   const o = v?.order;
   return (

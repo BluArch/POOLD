@@ -7,6 +7,7 @@ import { getOrder } from "./order-model.js";
 import { fail } from "./errors.js";
 import { notify } from "./notifications.js";
 import { id } from "./security.js";
+import { settle } from "./payments.js";
 export function claims(db: Pool) {
   const r = Router();
   r.put("/orders/:id/claims", verified, async (req, res) => {
@@ -104,6 +105,8 @@ export function claims(db: Pool) {
           "DELETE FROM memberships WHERE order_id=? AND user_id=?",
           [o.id, req.user!.id],
         );
+      // Fewer shares than already paid for: refund the difference.
+      await settle(c, o, req.user!.id, "you changed your shares");
       await notify(
         c,
         o.organizer_id,

@@ -73,10 +73,74 @@ export function MemberView({
 
       {!canChange && !hasShares && <ItemsReadOnly items={v.items} />}
 
-      {(hasShares || !canChange) && (
-        <PickupDetails view={v} refresh={refresh} />
+      {hasShares && <PayShare view={v} />}
+
+      {v.mine?.collectedAt ? (
+        <PickedUp view={v} />
+      ) : (
+        (hasShares || !canChange) && (
+          <PickupDetails view={v} refresh={refresh} />
+        )
       )}
     </>
+  );
+}
+
+/** Shown once the organizer confirms the buyer's pickup code. */
+function PickedUp({ view: v }: { view: OrderView }) {
+  const o = v.order,
+    m = v.mine!;
+  return (
+    <View
+      style={[
+        styles.card,
+        {
+          alignItems: "center",
+          gap: 10,
+          paddingVertical: 26,
+          backgroundColor: brand.greenSoft,
+        },
+      ]}
+    >
+      <View
+        style={{
+          width: 72,
+          height: 72,
+          borderRadius: 36,
+          backgroundColor: brand.greenDark,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Ionicons name="checkmark" size={42} color={P.white} />
+      </View>
+      <Text style={[type.title, { textAlign: "center" }]}>
+        {o.status === "completed" ? "All done!" : "Picked up!"}
+      </Text>
+      <Text style={[styles.text, { textAlign: "center" }]}>
+        {o.organizerName.split(" ")[0]} confirmed your pickup code (
+        {when(m.collectedAt!)}). Enjoy your groceries!
+      </Text>
+      <View style={{ alignSelf: "stretch", gap: 8, marginTop: 6 }}>
+        {v.myClaims
+          .filter((c) => c.available)
+          .map((c) => (
+            <ReceiptLine
+              key={c.itemId}
+              name={`${c.name} ×${c.quantity}`}
+              category={v.items.find((i) => i.id === c.itemId)?.category}
+              cost={money(c.estimateCents)}
+            />
+          ))}
+        {!v.isOrganizer && (
+          <View style={styles.between}>
+            <Text style={type.mono}>Paid</Text>
+            <Text style={type.label}>{money(m.paidCents)}</Text>
+          </View>
+        )}
+      </View>
+      {o.status === "completed" && <Badge tone="good">Group complete</Badge>}
+    </View>
   );
 }
 
@@ -161,6 +225,8 @@ function ShareChooser({
   const total = selected.reduce((n, i) => n + estimateFor(i, qty[i.id]), 0);
   const changed = v.items.some((i) => (qty[i.id] ?? 0) !== i.mine);
   const releasing = selected.length === 0;
+  const paid = v.mine?.paidCents ?? 0;
+  const toPay = v.isOrganizer ? 0 : Math.max(0, total - paid);
   const suffix = invite ? `?invite=${encodeURIComponent(invite)}` : "";
 
   const save = () =>
@@ -177,6 +243,12 @@ function ShareChooser({
         }),
       });
       await onSaved();
+      // Pay right away so the organizer has the money before shopping.
+      if (!v.isOrganizer && total > paid)
+        router.push({
+          pathname: "/(tabs)/pay/[id]",
+          params: { id: v.order.id },
+        });
     });
 
   return (
@@ -226,9 +298,11 @@ function ShareChooser({
                   ? v.myClaims.length
                     ? "Release all my shares"
                     : "Choose at least one share"
-                  : v.myClaims.length
-                    ? "Save changes"
-                    : "Confirm shares"}
+                  : toPay > 0
+                    ? `Confirm & pay ${money(toPay)}`
+                    : v.myClaims.length
+                      ? "Save changes"
+                      : "Confirm shares"}
             </Button>
           }
         >
@@ -373,9 +447,6 @@ export function PickupDetails({
           {m.arrived ? "Organizer knows you’re here" : "I’m here"}
         </Button>
       )}
-      {m && needsPickup && !v.isOrganizer && (
-        <PayShare view={v} refresh={refresh} />
-      )}
       <DirectionsButton order={o} />
       <ErrorText message={a.error} />
     </>
@@ -383,40 +454,28 @@ export function PickupDetails({
 }
 
 /**
- * Pay your share once shopping is done. Always test mode: Stripe test
- * checkout if the server has a test key, otherwise a built-in test screen.
+ * Payment status for your shares. Buyers pay when they confirm shares, so the
+ * organizer has the money before shopping. Always test mode.
  */
-function PayShare({
-  view: v,
-}: {
-  view: OrderView;
-  refresh: () => Promise<void>;
-}) {
+function PayShare({ view: v }: { view: OrderView }) {
   const a = useAction();
-  const m = v.mine!,
+  const m = v.mine,
     o = v.order;
-  if (m.paidCents !== null)
+  if (!m) return null;
+  if (v.isOrganizer)
     return (
-      <View style={[styles.card, styles.row]}>
-        <Ionicons name="checkmark-circle" size={24} color={brand.greenDark} />
-        <View style={{ flex: 1 }}>
-          <Text style={styles.text}>Paid {money(m.paidCents)}</Text>
-          {!!m.paidAt && <Text style={type.mono}>{when(m.paidAt)}</Text>}
-        </View>
-        <Badge tone="good">Test payment</Badge>
-      </View>
-    );
-  if (!["ready", "completed"].includes(o.status))
-    return (
-      <View style={[styles.note, styles.row]}>
-        <Ionicons name="card-outline" size={20} color={P.ink} />
+      <View style={[styles.note, styles.row, { alignItems: "flex-start" }]}>
+        <Ionicons name="information-circle-outline" size={22} color={P.ink} />
         <Text style={[styles.text, { flex: 1 }]}>
-          You’ll pay here after shopping, once the final price is known.
+          You’re the organizer, so there’s nothing to pay. Your own shares come
+          out of the shopping you do with everyone’s payments.
         </Text>
       </View>
     );
+  const refunds = m.payments.filter((p) => p.kind === "refund");
+  const lastCard = m.payments.find((p) => p.kind === "payment" && p.cardLast4);
   // Stripe test key on the server → Stripe's hosted test checkout.
-  // Otherwise → POOLD's own step-by-step test checkout screen.
+  // Otherwise → POOLD's own test checkout.
   const start = () =>
     a.run(async () => {
       if (v.payments !== "stripe_test") {
@@ -429,26 +488,69 @@ function PayShare({
       if (Platform.OS === "web") window.location.assign(r.url);
       else await Linking.openURL(r.url);
     });
-  return (
-    <View style={[styles.card, { gap: 10 }]}>
-      <View style={styles.between}>
-        <View>
-          <Text style={styles.h2}>Pay for your share</Text>
-          <Text style={type.mono}>Final price after shopping</Text>
-        </View>
-        <Text style={type.total}>{money(v.myEstimateCents)}</Text>
-      </View>
-      <Button
-        icon="card-outline"
-        disabled={a.busy}
-        onPress={() => void start()}
+  if (m.dueCents > 0 && !["cancelled"].includes(o.status))
+    return (
+      <View
+        style={[
+          styles.card,
+          { gap: 10, borderWidth: 2, borderColor: brand.orange },
+        ]}
       >
-        {`Pay ${money(v.myEstimateCents)}`}
-      </Button>
-      <Text style={[type.mono, { textAlign: "center" }]}>
-        Test mode: no real money is charged.
-      </Text>
-      <ErrorText message={a.error} />
+        <View style={styles.between}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.h2}>
+              {m.paidCents > 0 ? "Balance to pay" : "Payment needed"}
+            </Text>
+            <Text style={type.mono}>
+              {m.paidCents > 0
+                ? "A price went up or you added shares."
+                : `Pay now so ${o.organizerName.split(" ")[0]} can shop for you.`}
+            </Text>
+          </View>
+          <Text style={type.total}>{money(m.dueCents)}</Text>
+        </View>
+        <Button
+          icon="card-outline"
+          disabled={a.busy}
+          onPress={() => void start()}
+        >
+          {`Pay ${money(m.dueCents)}`}
+        </Button>
+        <Text style={[type.mono, { textAlign: "center" }]}>
+          Test mode: no real money is charged.
+        </Text>
+        <ErrorText message={a.error} />
+      </View>
+    );
+  if (m.paidCents <= 0 && !refunds.length) return null;
+  return (
+    <View style={[styles.card, { gap: 8 }]}>
+      <View style={styles.row}>
+        <Ionicons name="checkmark-circle" size={24} color={brand.greenDark} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.label}>
+            {m.paidCents > 0 ? `Paid ${money(m.paidCents)}` : "Fully refunded"}
+          </Text>
+          <Text style={type.mono}>
+            {lastCard
+              ? `${lastCard.cardBrand ?? "Card"} •••• ${lastCard.cardLast4}`
+              : "Card"}{" "}
+            · test payment
+          </Text>
+        </View>
+        <Badge tone="good">Paid</Badge>
+      </View>
+      {refunds.map((r) => (
+        <View key={r.id} style={styles.between}>
+          <Text style={[type.mono, { flex: 1 }]}>
+            Refunded {when(r.createdAt)}
+            {r.note ? ` · ${r.note}` : ""}
+          </Text>
+          <Text style={[type.label, { color: brand.greenDeep }]}>
+            +{money(r.amountCents)}
+          </Text>
+        </View>
+      ))}
     </View>
   );
 }

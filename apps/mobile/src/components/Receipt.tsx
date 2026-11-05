@@ -122,7 +122,7 @@ export function ReceiptPanel({
         <View style={{ flex: 1 }}>
           <Text style={type.mono}>
             {shares
-              ? `${shares} ${shares === 1 ? "share" : "shares"} · pay ${organizer.split(" ")[0]} at pickup`
+              ? `${shares} ${shares === 1 ? "share" : "shares"} · paid to ${organizer.split(" ")[0]} up front`
               : "Tap + to add a share"}
           </Text>
           <Text accessibilityLiveRegion="polite" style={type.total}>

@@ -1,4 +1,4 @@
-import { stripeKey } from "./payments.js";
+import { stripeKey, ledger } from "./payments.js";
 import type {
   OrderInput,
   OrderSummary,
@@ -188,9 +188,12 @@ export async function orderView(
       collectedAt: m.collected_at ? iso(m.collected_at) : null,
       claims,
       estimateCents: claims.reduce((n, c) => n + c.estimateCents, 0),
-      paidCents: m.paid_cents ?? null,
-      paidAt: m.paid_at ? iso(m.paid_at) : null,
-      paymentRef: m.payment_ref ?? null,
+      ...(await ledger(
+        db,
+        o.id,
+        m.user_id,
+        claims.reduce((n, c) => n + c.estimateCents, 0),
+      )),
     });
   }
   const ct = await first(

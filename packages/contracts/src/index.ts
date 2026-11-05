@@ -245,11 +245,22 @@ export interface Member {
   collectedAt: string | null;
   claims: Claim[];
   estimateCents: number;
-  /** Test-mode payment for this share; null until paid. No real money moves. */
-  paidCents: number | null;
-  paidAt: string | null;
-  /** Test receipt number, e.g. pi_test_… */
-  paymentRef: string | null;
+  /** Test-mode money paid for these shares, minus refunds. No real money moves. */
+  paidCents: number;
+  /** Still to pay (estimate minus what's paid); 0 when settled. */
+  dueCents: number;
+  /** Payments and refunds, newest first. */
+  payments: Payment[];
+}
+export interface Payment {
+  id: string;
+  kind: "payment" | "refund";
+  amountCents: number;
+  createdAt: string;
+  ref: string | null;
+  cardBrand: string | null;
+  cardLast4: string | null;
+  note: string | null;
 }
 export interface OrderView {
   order: OrderSummary;

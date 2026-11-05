@@ -10,6 +10,7 @@ import { fail, RATE_LIMIT_ERROR } from "./errors.js";
 import { notify, notifyMembers } from "./notifications.js";
 import { hash, id } from "./security.js";
 import { orderInput } from "@poold/contracts";
+import { settleAll } from "./payments.js";
 const deliverableSql = `SELECT m.* FROM memberships m WHERE m.order_id=? AND EXISTS(SELECT 1 FROM share_claims c JOIN order_items i ON i.id=c.item_id WHERE c.user_id=m.user_id AND i.order_id=m.order_id AND i.available=TRUE AND c.quantity>0)`;
 export function fulfillment(db: Pool) {
   const r = Router();
@@ -103,6 +104,8 @@ export function fulfillment(db: Pool) {
           "Confirm every required collection before completing the order.",
         );
       await execute(c, "UPDATE orders SET status=? WHERE id=?", [status, o.id]);
+      if (status === "cancelled")
+        await settleAll(c, o, "the group was cancelled", true);
       const labels = {
         locked: "Shares are locked.",
         shopping: "Shopping has started.",
@@ -192,6 +195,12 @@ export function fulfillment(db: Pool) {
           o.id,
           `${it.name} in ${o.name}: ${available ? `estimated pack price is now CAD ${(price / 100).toFixed(2)}` : "unavailable; excluded from product-cost estimates"}. Review your order.`,
           `item:${id()}`,
+        );
+        // Cheaper or unavailable now: refund what members overpaid.
+        await settleAll(
+          c,
+          o,
+          available ? `${it.name} got cheaper` : `${it.name} was unavailable`,
         );
       }
     });

@@ -126,6 +126,7 @@ export function createApp(
     payments(
       db,
       process.env.PUBLIC_APP_URL ?? process.env.RENDER_EXTERNAL_URL ?? origin,
+      sendMail,
     ),
   );
   app.use("/api", claims(db));

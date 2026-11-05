@@ -300,6 +300,7 @@ function CollectStep({
         </View>
         <ProgressBar value={o.memberCount} total={o.maxMembers} />
       </View>
+      <MoneyCard view={v} />
       <View style={[styles.card, { gap: 16 }]}>
         <Text style={styles.label}>Shares claimed</Text>
         {v.items.map((i) => {
@@ -344,6 +345,9 @@ function CollectStep({
                 "No shares"}{" "}
               · {m.attending ? "Pickup confirmed" : "Pickup not confirmed"}
             </Text>
+            {m.userId !== v.order.organizerId && m.estimateCents > 0 && (
+              <PaidBadge member={m} />
+            )}
           </View>
         ))}
       </Collapsible>
@@ -608,6 +612,7 @@ function ShopStep({
             : "Start when you’re at the store."
         }
       />
+      <MoneyCard view={v} />
       {shopping && (
         <View style={styles.card}>
           <View style={styles.between}>
@@ -832,6 +837,12 @@ function HandOutStep({
           readOnly={readOnly}
         />
       ))}
+      {o.status === "ready" && bags.length > 0 && collected === bags.length && (
+        <Celebrate
+          title="Every bag is handed out"
+          body="All pickup codes were confirmed. Finish the group to wrap up."
+        />
+      )}
       {!readOnly && o.status === "ready" && (
         <Advance
           view={v}
@@ -874,7 +885,7 @@ function HandOutBag({
   return (
     <Collapsible
       title={m.name}
-      summary={`${status}${m.paidCents !== null ? " · Paid" : ""}`}
+      summary={`${status}${m.userId === v.order.organizerId ? " · Your own bag" : m.dueCents > 0 ? ` · Owes ${money(m.dueCents)}` : " · Paid"}`}
       defaultOpen={!m.collectedAt}
     >
       <View style={styles.row}>
@@ -897,9 +908,7 @@ function HandOutBag({
           </Text>
         </View>
         <Text style={[styles.h3, { flex: 1 }]}>{m.name}</Text>
-        <Badge tone={m.paidCents !== null ? "good" : "neutral"}>
-          {m.paidCents !== null ? `Paid ${money(m.paidCents)}` : "Not paid yet"}
-        </Badge>
+        {m.userId !== v.order.organizerId && <PaidBadge member={m} />}
       </View>
       {m.claims
         .filter((c) => c.available && c.quantity > 0)
@@ -950,13 +959,119 @@ function HandOutBag({
 
 function Done({ view: v }: { view: OrderView }) {
   const bags = bagsOf(v);
+  const collected = v.members
+    .filter((m) => m.userId !== v.order.organizerId)
+    .reduce((n, m) => n + m.paidCents, 0);
   return (
-    <View style={styles.note}>
-      <Text style={styles.h2}>Order complete</Text>
-      <Text style={styles.text}>
-        {bags.length} bag{bags.length === 1 ? "" : "s"} handed out. Nice work!
+    <Celebrate
+      title="Group complete!"
+      body={`${bags.length} bag${bags.length === 1 ? "" : "s"} handed out and every code confirmed. Thanks for organizing.`}
+    >
+      <View style={[styles.row, { gap: 8, alignSelf: "stretch" }]}>
+        {[
+          [String(bags.length), "Bags"],
+          [String(v.members.length), "Members"],
+          [money(collected), "Collected"],
+        ].map(([n, label]) => (
+          <View
+            key={label}
+            style={{
+              flex: 1,
+              backgroundColor: P.white,
+              borderRadius: 14,
+              padding: 10,
+              alignItems: "center",
+            }}
+          >
+            <Text style={[type.total, { fontSize: 20 }]}>{n}</Text>
+            <Text style={type.mono}>{label}</Text>
+          </View>
+        ))}
+      </View>
+    </Celebrate>
+  );
+}
+
+/** Big "you finished this step" frame. */
+function Celebrate({
+  title,
+  body,
+  children,
+}: {
+  title: string;
+  body: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <View
+      style={[
+        styles.card,
+        {
+          alignItems: "center",
+          gap: 10,
+          paddingVertical: 24,
+          backgroundColor: brand.greenSoft,
+        },
+      ]}
+    >
+      <View
+        style={{
+          width: 68,
+          height: 68,
+          borderRadius: 34,
+          backgroundColor: brand.greenDark,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Ionicons name="checkmark-done" size={36} color={P.white} />
+      </View>
+      <Text style={[type.title, { fontSize: 26, textAlign: "center" }]}>
+        {title}
       </Text>
+      <Text style={[styles.text, { textAlign: "center" }]}>{body}</Text>
+      {children}
     </View>
+  );
+}
+
+/** Money members have paid in, so the organizer knows what they can spend. */
+function MoneyCard({ view: v }: { view: OrderView }) {
+  const buyers = v.members.filter(
+    (m) => m.userId !== v.order.organizerId && m.estimateCents > 0,
+  );
+  const paid = buyers.reduce(
+    (n, m) => n + Math.min(m.paidCents, m.estimateCents),
+    0,
+  );
+  const expected = buyers.reduce((n, m) => n + m.estimateCents, 0);
+  const unpaid = buyers.filter((m) => m.dueCents > 0).length;
+  return (
+    <View style={styles.card}>
+      <View style={styles.between}>
+        <View>
+          <Text style={styles.text}>Money collected</Text>
+          <Text style={type.mono}>Your budget for the shopping trip</Text>
+        </View>
+        <Text style={styles.h3}>
+          {money(paid)} of {money(expected)}
+        </Text>
+      </View>
+      <ProgressBar value={paid} total={Math.max(expected, 1)} />
+      {unpaid > 0 && (
+        <Text style={[type.mono, { color: P.beet }]}>
+          {unpaid} {unpaid === 1 ? "person hasn’t" : "people haven’t"} paid yet
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function PaidBadge({ member: m }: { member: Member }) {
+  return m.dueCents > 0 ? (
+    <Badge tone="urgent">{`Owes ${money(m.dueCents)}`}</Badge>
+  ) : (
+    <Badge tone="good">{`Paid ${money(m.paidCents)}`}</Badge>
   );
 }
 

@@ -3,66 +3,86 @@ import assert from "node:assert/strict";
 import { setup } from "./helpers.js";
 import { stripeKey } from "../src/payments.js";
 
-test("payments: test-mode only, buyers pay after shopping, organizer sees it", async () => {
+test("payments: buyers pay when they confirm shares, refunds follow changes", async () => {
   const h = await setup();
   const { call, tokens: t } = h;
   try {
     const id = await h.create();
     await h.publish(id);
-    const v = (await call(`/orders/${id}`, "GET", undefined, t.maya)).body;
+    const view = async (auth: string) =>
+      (await call(`/orders/${id}`, "GET", undefined, auth)).body;
+    const v = await view(t.maya);
     assert.equal(v.payments, "demo");
     const iid = v.items[0].id;
-    await call(
-      `/orders/${id}/claims`,
-      "PUT",
-      { revision: 1, attending: true, claims: [{ itemId: iid, quantity: 2 }] },
-      t.jordan,
-    );
-    // Not before the final price is known.
-    assert.equal(
-      (await call(`/orders/${id}/pay`, "POST", {}, t.jordan)).body.error.code,
-      "NOT_READY",
-    );
-    const status = (s: string) =>
-      call(`/orders/${id}/status`, "POST", { status: s }, t.maya);
-    await status("locked");
-    await call(
-      `/orders/${id}/items/${iid}`,
-      "PATCH",
-      { shortfallDecision: "proceed" },
-      t.maya,
-    );
-    await status("shopping");
-    await call(`/orders/${id}/items/${iid}`, "PATCH", { bought: true }, t.maya);
-    assert.equal((await status("ready")).status, 200);
+    const claim = async (quantity: number) =>
+      call(
+        `/orders/${id}/claims`,
+        "PUT",
+        {
+          revision: (await view(t.jordan)).order.revision,
+          attending: true,
+          claims: [{ itemId: iid, quantity }],
+        },
+        t.jordan,
+      );
+    assert.equal((await claim(2)).status, 200);
+    let member = await view(t.jordan);
+    const owed = member.myEstimateCents;
+    assert.ok(owed > 0);
+    assert.equal(member.mine.dueCents, owed);
+    assert.equal(member.mine.paidCents, 0);
+    // Pay before shopping, so the organizer has the money.
     const due = await call(`/orders/${id}/pay`, "POST", {}, t.jordan);
     assert.equal(due.status, 200);
-    assert.equal(due.body.mode, "demo");
-    const member = (await call(`/orders/${id}`, "GET", undefined, t.jordan))
-      .body;
-    assert.equal(due.body.amountCents, member.myEstimateCents);
-    assert.equal(member.mine.paidCents, null);
-    // Organizer doesn't pay themself.
+    assert.equal(due.body.amountCents, owed);
+    const paid = await call(
+      `/orders/${id}/pay/demo`,
+      "POST",
+      { brand: "Visa", last4: "4242" },
+      t.jordan,
+    );
+    assert.equal(paid.status, 200);
+    member = await view(t.jordan);
+    assert.equal(member.mine.paidCents, owed);
+    assert.equal(member.mine.dueCents, 0);
+    assert.equal(member.mine.payments[0].cardLast4, "4242");
+    assert.equal(
+      (await call(`/orders/${id}/pay/demo`, "POST", {}, t.jordan)).body.error
+        .code,
+      "NOTHING_TO_PAY",
+    );
+    // The organizer doesn't pay themself.
     assert.equal(
       (await call(`/orders/${id}/pay/demo`, "POST", {}, t.maya)).body.error
         .code,
       "ORGANIZER",
     );
+    // Organizer sees the payment and gets an update.
+    const org = await view(t.maya);
+    assert.equal(
+      org.members.find((m: any) => m.userId === "demo-jordan").paidCents,
+      owed,
+    );
+    const updates = (await call("/notifications", "GET", undefined, t.maya))
+      .body;
+    assert.ok(updates.some((n: any) => /paid/.test(n.message)));
+    // Fewer shares: the difference is refunded automatically.
+    await claim(1);
+    member = await view(t.jordan);
+    assert.equal(member.mine.paidCents, member.myEstimateCents);
+    assert.equal(member.mine.payments[0].kind, "refund");
+    // More shares: a balance appears and can be paid.
+    await claim(2);
+    member = await view(t.jordan);
+    assert.ok(member.mine.dueCents > 0);
     assert.equal(
       (await call(`/orders/${id}/pay/demo`, "POST", {}, t.jordan)).status,
       200,
     );
-    assert.equal(
-      (await call(`/orders/${id}/pay/demo`, "POST", {}, t.jordan)).body.error
-        .code,
-      "ALREADY_PAID",
-    );
-    const org = (await call(`/orders/${id}`, "GET", undefined, t.maya)).body;
-    const jordan = org.members.find((m: any) => m.userId === "demo-jordan");
-    assert.equal(jordan.paidCents, member.myEstimateCents);
-    const updates = (await call("/notifications", "GET", undefined, t.maya))
-      .body;
-    assert.ok(updates.some((n: any) => /paid/.test(n.message)));
+    // Cancelling the group refunds everything.
+    await call(`/orders/${id}/status`, "POST", { status: "cancelled" }, t.maya);
+    member = await view(t.jordan);
+    assert.equal(member.mine.paidCents, 0);
   } finally {
     await h.close();
   }
