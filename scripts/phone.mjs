@@ -55,7 +55,39 @@ const stop = () => {
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
 
-setTimeout(() => {
+// Wait until the server answers before opening the public link, so the first
+// visitors don't get "Bad gateway".
+async function waitForServer() {
+  for (let i = 0; i < 60; i++) {
+    try {
+      const r = await fetch(`http://127.0.0.1:${port}/api/health`);
+      if (r.ok) return true;
+    } catch {
+      // not up yet
+    }
+    await new Promise((done) => setTimeout(done, 1000));
+  }
+  return false;
+}
+
+api.on("exit", (code) => {
+  console.error(
+    "\n   ❌ POOLD stopped (code " +
+      code +
+      "). Check the error above. Is Docker running (docker compose up -d) and did you run npm run db:migrate?\n",
+  );
+  stop();
+});
+
+void waitForServer().then((ok) => {
+  if (!ok) {
+    console.error(
+      "\n   ❌ POOLD didn’t start on port " +
+        port +
+        ". Is something else using it (like npm run dev)? Stop it and try again.\n",
+    );
+    return stop();
+  }
   console.log("\n3/3  Share one of these links:\n");
   for (const url of lan) console.log("   Same Wi-Fi:  " + url);
   if (lanOnly) return;
@@ -76,7 +108,7 @@ setTimeout(() => {
   let shown = false;
   const watch = (chunk) => {
     const match = String(chunk).match(
-      /https:\/\/[a-z0-9-]+\.trycloudflare\.com/,
+      /https:\/\/(?!api\.)[a-z0-9]+(?:-[a-z0-9]+)+\.trycloudflare\.com/,
     );
     if (match && !shown) {
       shown = true;
@@ -96,4 +128,4 @@ setTimeout(() => {
           "). The Wi-Fi link above still works.\n",
       );
   });
-}, 4000);
+});
