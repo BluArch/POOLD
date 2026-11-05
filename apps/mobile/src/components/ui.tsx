@@ -31,6 +31,7 @@ import {
 } from "../theme";
 import { useRole, ROLE_HOME } from "../role";
 import { getPref, setPref } from "../storage";
+import { TourTarget } from "./Tour";
 export const styles = StyleSheet.create({
   title: type.title,
   h2: type.section,
@@ -187,7 +188,13 @@ export function Screen({
                       poold
                     </Text>
                   )}
-                  {roleSwitch ? <RoleSwitch /> : stamp}
+                  {roleSwitch ? (
+                    <TourTarget id="role-switch">
+                      <RoleSwitch />
+                    </TourTarget>
+                  ) : (
+                    stamp
+                  )}
                 </View>
                 <View style={{ gap: 4 }}>
                   {back && !!subtitle && (

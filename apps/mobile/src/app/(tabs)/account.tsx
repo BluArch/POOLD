@@ -18,11 +18,13 @@ import {
 } from "../../components/ui";
 import { palette as P, type } from "../../theme";
 import { useRole } from "../../role";
+import { useTour } from "../../components/Tour";
 import { setPref } from "../../storage";
 type DevMail = { to: string; subject: string; text: string; createdAt: string };
 export default function Account() {
   const s = useSession(),
     role = useRole(),
+    tour = useTour(),
     a = useAction(),
     r = useResource<User>("/profile"),
     [name, setName] = useState(s.user?.name ?? ""),
@@ -169,9 +171,20 @@ export default function Account() {
       <Button
         secondary
         icon="sparkles-outline"
+        onPress={() => {
+          role.setRole("buying");
+          router.navigate("/(tabs)/community");
+          tour.start();
+        }}
+      >
+        Replay the app tour
+      </Button>
+      <Button
+        secondary
+        icon="albums-outline"
         onPress={() => void setPref("poold.onboarded", "")}
       >
-        Show the intro again
+        Show the intro slides next time
       </Button>
       <Button
         secondary

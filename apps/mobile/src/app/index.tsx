@@ -251,6 +251,8 @@ export default function Home() {
                   email,
                   password,
                 });
+                // New account: show the app tour once they're in.
+                await setPref("poold.tour", "pending");
                 setMessage(result.message ?? "Your account has been created.");
                 setPassword("");
                 setPasswordVisible(false);

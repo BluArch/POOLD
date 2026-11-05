@@ -768,3 +768,53 @@ export const resetPasswordInput = z.object({
     .max(128, "Your password must be 128 characters or fewer."),
   native: z.boolean().optional(),
 });
+
+/** A list of things buyers want, waiting for someone to organize it. */
+export interface Wishlist {
+  id: string;
+  title: string;
+  store: string;
+  pickupLocation: string;
+  note: string;
+  status: "open" | "claimed" | "closed";
+  creatorName: string;
+  mine: boolean;
+  joined: boolean;
+  memberCount: number;
+  /** Group made from this wishlist, once someone organizes it. */
+  orderId: string | null;
+  organizerName: string | null;
+  items: WishlistItem[];
+  createdAt: string;
+}
+export interface WishlistItem {
+  id: string;
+  name: string;
+  catalogKey: string | null;
+  wants: number;
+  wanted: boolean;
+}
+const wishItemInput = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "Name the item.")
+    .max(120, "Keep item names under 120 characters."),
+  catalogKey: z.string().max(40).nullable().default(null),
+});
+export const wishlistInput = z.object({
+  title: z
+    .string({ error: "Give the wishlist a name." })
+    .trim()
+    .min(1, "Give the wishlist a name.")
+    .max(80, "Keep the name under 80 characters."),
+  store: z.string().trim().min(1, "Choose a store.").max(80),
+  pickupLocation: z.string().trim().min(1, "Choose a pickup place.").max(160),
+  note: z.string().trim().max(280).default(""),
+  items: z
+    .array(wishItemInput)
+    .min(1, "Add at least one item.")
+    .max(30, "Up to 30 items."),
+});
+export type WishlistInput = z.infer<typeof wishlistInput>;
+export const wishlistItemInput = wishItemInput;

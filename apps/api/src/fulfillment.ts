@@ -106,6 +106,13 @@ export function fulfillment(db: Pool) {
       await execute(c, "UPDATE orders SET status=? WHERE id=?", [status, o.id]);
       if (status === "cancelled")
         await settleAll(c, o, "the group was cancelled", true);
+      // A cancelled group frees its wishlist for another organizer.
+      if (status === "cancelled")
+        await execute(
+          c,
+          "UPDATE wishlists SET status='open',order_id=NULL,organizer_id=NULL WHERE order_id=?",
+          [o.id],
+        );
       const labels = {
         locked: "Shares are locked.",
         shopping: "Shopping has started.",

@@ -1,7 +1,8 @@
 import React from "react";
-import { Text, View } from "react-native";
+import { Text, View, Pressable } from "react-native";
 import { router } from "expo-router";
-import type { OrderSummary } from "@poold/contracts";
+import { Ionicons } from "@expo/vector-icons";
+import type { OrderSummary, Wishlist } from "@poold/contracts";
 import {
   Screen,
   Button,
@@ -10,32 +11,69 @@ import {
   useResource,
   ResourceState,
 } from "../../components/ui";
-import { OrderRow } from "../../components/OrderRow";
-import { type, roles } from "../../theme";
+import { WishlistCard } from "../../components/Wishlist";
+import { palette as P, type, roles, brand } from "../../theme";
 import { useSession } from "../../session";
 
 const needsYou = (o: OrderSummary) =>
   ["draft", "locked", "shopping", "ready"].includes(o.status) ||
   (o.status === "open" && Date.parse(o.deadline) - Date.now() < 86400000);
 
-/** Organizer home: what needs doing now, and a quick way to start a group. */
+/**
+ * Organizer home: a quick way into your own groups, then the wishlists
+ * buyers posted that are waiting for someone to organize them.
+ */
 export default function Hub() {
   const r = useResource<OrderSummary[]>("/orders?scope=organizing");
+  const wishes = useResource<Wishlist[]>("/wishlists");
   const s = useSession();
   const all = r.data ?? [];
-  const now = all
-    .filter(needsYou)
-    .sort((a, b) => Date.parse(a.pickupAt) - Date.parse(b.pickupAt));
   const count = (st: string[]) =>
     all.filter((o) => st.includes(o.status)).length;
+  const urgent = all.filter(needsYou).length;
+  const waiting = (wishes.data ?? []).filter((w) => !w.mine);
   return (
     <Screen
       title={`Hi, ${s.user?.name.split(" ")[0] ?? "there"}`}
-      subtitle="Your groups at a glance"
+      subtitle="Ready to organize a run?"
       roleSwitch
-      onRefresh={() => void r.refresh()}
+      onRefresh={() => void Promise.all([r.refresh(), wishes.refresh()])}
       refreshing={r.loading}
-      header={
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="View my groups"
+        onPress={() => router.navigate("/(tabs)/organize")}
+        style={({ pressed }) => [
+          styles.card,
+          { gap: 12, opacity: pressed ? 0.85 : 1 },
+        ]}
+      >
+        <View style={styles.between}>
+          <View style={[styles.row, { gap: 10 }]}>
+            <View
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: roles.organizing.tab,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons name="albums" size={20} color={P.ink} />
+            </View>
+            <View>
+              <Text style={styles.h2}>My groups</Text>
+              <Text style={type.mono}>
+                {urgent
+                  ? `${urgent} ${urgent === 1 ? "needs" : "need"} a step from you`
+                  : "Nothing waiting on you"}
+              </Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={22} color={P.muted} />
+        </View>
         <View style={[styles.row, { gap: 8 }]}>
           <Stat value={count(["open"])} label="Open" />
           <Stat
@@ -44,47 +82,38 @@ export default function Hub() {
           />
           <Stat value={count(["draft"])} label="Drafts" />
         </View>
-      }
-    >
-      <Button icon="add" onPress={() => router.navigate("/(tabs)/create")}>
-        Start a new group
+      </Pressable>
+      <Button
+        secondary
+        icon="add"
+        onPress={() => router.navigate("/(tabs)/create")}
+      >
+        Start a group from scratch
       </Button>
+
+      <View>
+        <Text
+          style={[type.section, { marginBottom: 2 }]}
+          accessibilityRole="header"
+        >
+          Groups looking for an organizer
+        </Text>
+        <Text style={[type.mono, { marginBottom: 12 }]}>
+          Buyers posted what they want. Pick one up and it becomes your group.
+        </Text>
+        <ResourceState resource={wishes} />
+        {waiting.map((w) => (
+          <WishlistCard key={w.id} wishlist={w} organizer />
+        ))}
+        {wishes.data && waiting.length === 0 && (
+          <EmptyState
+            icon="list-outline"
+            title="No requests right now"
+            message="When buyers post a wishlist, it shows up here."
+          />
+        )}
+      </View>
       <ResourceState resource={r} />
-      {r.data && (
-        <View>
-          <Text
-            style={[type.section, { marginBottom: 10 }]}
-            accessibilityRole="header"
-          >
-            Needs you now
-          </Text>
-          {now.map((o) => (
-            <OrderRow key={o.id} order={o} showStatus organize />
-          ))}
-          {now.length === 0 && (
-            <EmptyState
-              icon="checkmark-done-outline"
-              title={
-                all.length ? "You’re all caught up" : "Start your first group"
-              }
-              message={
-                all.length
-                  ? "Groups that need a step from you show up here."
-                  : "Pick a store, add items, and choose a pickup spot."
-              }
-            >
-              {all.length > 0 && (
-                <Button
-                  secondary
-                  onPress={() => router.navigate("/(tabs)/organize")}
-                >
-                  See all my groups
-                </Button>
-              )}
-            </EmptyState>
-          )}
-        </View>
-      )}
     </Screen>
   );
 }
@@ -97,9 +126,7 @@ function Stat({ value, label }: { value: number; label: string }) {
         borderRadius: 16,
         paddingVertical: 10,
         paddingHorizontal: 12,
-        backgroundColor: roles.organizing.headerLight
-          ? "rgba(255,255,255,0.6)"
-          : "rgba(255,255,255,0.16)",
+        backgroundColor: brand.greenSoft,
       }}
     >
       <Text
