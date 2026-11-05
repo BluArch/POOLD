@@ -15,6 +15,7 @@ import {
   insertItems,
   validateFuture,
 } from "./order-model.js";
+import { claimWishlist, wishlistPublished } from "./wishlists.js";
 export function orders(db: Pool) {
   const r = Router();
   r.use("/orders", verified);
@@ -96,7 +97,21 @@ export function orders(db: Pool) {
   r.post("/orders", async (req, res) => {
     const b = orderInput.parse(req.body);
     validateFuture(b);
-    const oid = await transaction(db, (c) => insertDraft(c, b, req.user!.id));
+    // A group can start from a buyers' wishlist; it's linked so everyone who
+    // wanted it hears when it opens.
+    const wishlistId = z.string().uuid().optional().parse(req.body.wishlistId);
+    const oid = await transaction(db, async (c) => {
+      const created = await insertDraft(c, b, req.user!.id);
+      if (wishlistId)
+        await claimWishlist(
+          c,
+          wishlistId,
+          created,
+          req.user!.id,
+          req.user!.name,
+        );
+      return created;
+    });
     res.status(201).json({ id: oid });
   });
   r.put("/orders/:id", async (req, res) => {
@@ -234,6 +249,7 @@ export function orders(db: Pool) {
           "Add items before publishing. Quick splits need one item.",
         );
       await execute(c, "UPDATE orders SET status='open' WHERE id=?", [o.id]);
+      await wishlistPublished(c, o);
     });
     res.json({ ok: true });
   });

@@ -1,3 +1,4 @@
+import { stripeKey, ledger, payoutSummary } from "./payments.js";
 import type {
   OrderInput,
   OrderSummary,
@@ -6,6 +7,7 @@ import type {
   Claim,
   Member,
 } from "@poold/contracts";
+import { feeFor } from "@poold/contracts";
 import type { DB } from "./db.js";
 import { first, rows, execute, iso } from "./db.js";
 import { fail } from "./errors.js";
@@ -61,8 +63,8 @@ export async function summary(
 ): Promise<OrderSummary> {
   const stats = await first(
     db,
-    `SELECT (SELECT COUNT(*) FROM memberships WHERE order_id=?) AS member_count,(SELECT name FROM users WHERE id=?) AS organizer_name,EXISTS(SELECT 1 FROM memberships WHERE order_id=? AND user_id=?) AS joined,(SELECT GROUP_CONCAT(name ORDER BY name SEPARATOR ' · ') FROM order_items WHERE order_id=? AND available=TRUE) AS preview`,
-    [o.id, o.organizer_id, o.id, uid, o.id],
+    `SELECT (SELECT COUNT(*) FROM memberships WHERE order_id=?) AS member_count,(SELECT name FROM users WHERE id=?) AS organizer_name,EXISTS(SELECT 1 FROM memberships WHERE order_id=? AND user_id=?) AS joined,(SELECT COALESCE(SUM(c.quantity),0) FROM share_claims c JOIN order_items i ON i.id=c.item_id WHERE i.order_id=? AND c.user_id=?) AS my_shares,(SELECT GROUP_CONCAT(name ORDER BY name SEPARATOR ' · ') FROM order_items WHERE order_id=? AND available=TRUE) AS preview`,
+    [o.id, o.organizer_id, o.id, uid, o.id, uid, o.id],
   );
   const previews = await rows(
     db,
@@ -88,6 +90,8 @@ export async function summary(
     organizerName: stats.organizer_name,
     organizerId: o.organizer_id,
     joined: !!stats.joined,
+    myShares: Number(stats.my_shares),
+    organizerRating: await organizerRating(db, o.organizer_id),
     preview: stats.preview ?? "",
     previewItems: previews.map((i) => ({
       name: i.name,
@@ -186,8 +190,21 @@ export async function orderView(
       collectedAt: m.collected_at ? iso(m.collected_at) : null,
       claims,
       estimateCents: claims.reduce((n, c) => n + c.estimateCents, 0),
+      noShowAt: m.no_show_at ? iso(m.no_show_at) : null,
+      ...(await ledger(
+        db,
+        o.id,
+        m.user_id,
+        claims.reduce((n, c) => n + c.estimateCents, 0),
+        m.user_id === o.organizer_id,
+      )),
     });
   }
+  const rating = await first(
+    db,
+    "SELECT stars FROM ratings WHERE order_id=? AND buyer_id=?",
+    [o.id, uid],
+  );
   const ct = await first(
     db,
     "SELECT code FROM collection_tokens WHERE order_id=? AND user_id=? AND used_at IS NULL",
@@ -198,9 +215,23 @@ export async function orderView(
     items,
     myClaims,
     myEstimateCents: myClaims.reduce((n, c) => n + c.estimateCents, 0),
+    myFeeCents: feeFor(
+      myClaims.reduce((n, c) => n + c.estimateCents, 0),
+      o.organizer_id === uid,
+    ),
+    ...(o.organizer_id === uid
+      ? { payouts: await payoutSummary(db, o.id) }
+      : {}),
+    proof: await proofFor(db, o, uid),
+    myRating: rating ? Number(rating.stars) : null,
+    canRate:
+      !rating &&
+      o.organizer_id !== uid &&
+      !!members.find((m) => m.userId === uid)?.collectedAt,
     mine: members.find((m) => m.userId === uid) ?? null,
     members: o.organizer_id === uid ? members : [],
     isOrganizer: o.organizer_id === uid,
+    payments: stripeKey() ? "stripe_test" : "demo",
     ...(o.organizer_id === uid ? { inviteToken: o.invite_token } : {}),
     ...(ct && o.status === "ready" ? { collectionCode: ct.code } : {}),
   };
@@ -272,4 +303,39 @@ export async function insertItems(
 export function validateFuture(b: OrderInput) {
   if (Date.parse(b.deadline) <= Date.now())
     fail(400, "PAST_DEADLINE", "Choose a deadline in the future.");
+}
+
+/** Average buyer rating for an organizer, or null if nobody rated yet. */
+export async function organizerRating(db: DB, organizerId: string) {
+  const r = await first(
+    db,
+    "SELECT AVG(stars) AS average, COUNT(*) AS n FROM ratings WHERE organizer_id=?",
+    [organizerId],
+  );
+  return Number(r.n)
+    ? { average: Math.round(Number(r.average) * 10) / 10, count: Number(r.n) }
+    : null;
+}
+
+/** Receipt and items photo, for the organizer and the group's members. */
+async function proofFor(db: DB, o: any, uid: string) {
+  const member =
+    o.organizer_id === uid ||
+    (await first(
+      db,
+      "SELECT 1 FROM memberships WHERE order_id=? AND user_id=?",
+      [o.id, uid],
+    ));
+  if (!member) return null;
+  const p = await first(db, "SELECT * FROM shopping_proofs WHERE order_id=?", [
+    o.id,
+  ]);
+  return p
+    ? {
+        receiptPhoto: p.receipt_photo,
+        itemsPhoto: p.items_photo,
+        receiptTotalCents: p.receipt_total_cents,
+        uploadedAt: iso(p.uploaded_at),
+      }
+    : null;
 }

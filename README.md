@@ -4,6 +4,16 @@ The Expo / React Native app, Node API and MySQL implementation are now in this r
 
 Local preview: `npm run dev` after setup.
 
+**App redesign (layan/app-redesign):**
+
+- **Buying and organizing are separate sides.** Each has its own home, tabs and colour: butter yellow for buying, sage green for organizing. Switch between them at the top of any home screen.
+- **First-time intro.** Four swipeable intro screens appear the first time the app opens. They can be skipped and can be shown again from Profile.
+- **Demo on phones.** Run `npm run phone`. It builds the web app and prints a Wi-Fi link plus a public `trycloudflare.com` link that any phone can open. Phones can add it to the home screen to use it like an app.
+- **Sign-in fixes.** Sign-in limits now count per person, so a class on one Wi-Fi isn't locked out. There is also a "Forgot password?" option that emails a six-digit code.
+- **Test payments only.** Buyers pay up front, including a 5% service fee. Organizers also pay for their own shares, with no fee. POOLD holds the money: the item cost is released when shopping starts, and the fees after every bag is handed out. Shares that are still unpaid when shares close are dropped. Organizers upload a receipt and a photo of the items before pickup opens. Leave `STRIPE_SECRET_KEY` blank to use the built-in test checkout, or set a Stripe `sk_test_` key. Live keys are refused.
+- **UVic only.** Accounts need an @uvic.ca email. The local demo accounts are the only exception.
+- **No-shows and ratings.** A buyer who misses pickup has 24 hours to collect their bag. After that the organizer keeps the bag and the payment, and the buyer gets a no-show mark. If an organizer never gets to pickup, the group is cancelled and every buyer gets a full refund. Buyers rate organizers after pickup. The full rules are in the app under Profile → Payments, refunds and no-shows.
+
 Live app: **[poold.onrender.com](https://poold.onrender.com)**. Hosted on [Render Free + Aiven MySQL Free](Documentation/implementation/HOSTING.md), with Brevo verification email configured. Free hosting sleeps when idle; the first request can take about a minute.
 
 ---

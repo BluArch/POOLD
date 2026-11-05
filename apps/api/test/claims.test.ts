@@ -123,7 +123,12 @@ test("Phase C: simultaneous joins for one membership slot and private membership
       2,
     );
     const winner = rs[0].status === 200 ? t.jordan : t.alex;
-    await call(`/orders/${id}/claims`, "PUT", { ...b, attending:false, claims: [] }, winner);
+    await call(
+      `/orders/${id}/claims`,
+      "PUT",
+      { ...b, attending: false, claims: [] },
+      winner,
+    );
     assert.equal(
       (await call(`/orders/${id}`, "GET", undefined, t.maya)).body.order
         .memberCount,

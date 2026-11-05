@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, Share } from "react-native";
+import { View, Text, Share, Pressable, Image } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import { Ionicons } from "@expo/vector-icons";
 import * as ExpoLinking from "expo-linking";
 import { router } from "expo-router";
 import {
@@ -22,10 +24,12 @@ import {
   useAction,
   useResource,
   when,
+  CurrencyField,
 } from "./ui";
 import { ItemIcon } from "./ItemIcon";
 import { ReceiptLine } from "./Receipt";
-import { palette as P, type } from "../theme";
+import { palette as P, type, brand } from "../theme";
+import { Badge } from "./Market";
 import { RequestCard } from "./RequestList";
 import { DirectionsButton } from "./MemberView";
 import {
@@ -36,7 +40,7 @@ import {
   draftToInput,
 } from "./ItemEditor";
 import { DateTimeField, roundUp } from "./Pickers";
-import { Collapsible, ProgressBar, SummaryLinks } from "./Sections";
+import { Collapsible, ProgressBar } from "./Sections";
 
 const STEPS = ["Shares", "Shop", "Hand out"];
 
@@ -80,10 +84,8 @@ export function OrganizerView({
     return (
       <>
         <View style={styles.note}>
-          <Text style={styles.h3}>This order was cancelled.</Text>
-          <Text style={styles.muted}>
-            Members were notified. You can start again from a new draft.
-          </Text>
+          <Text style={styles.h3}>This group was cancelled.</Text>
+          <Text style={styles.muted}>Members were notified.</Text>
         </View>
         <MoreOptions view={v} refresh={refresh} />
       </>
@@ -92,12 +94,16 @@ export function OrganizerView({
   const readOnly = viewing < Math.min(current, 2);
   return (
     <>
-      <SummaryLinks
-        steps={STEPS}
-        current={current}
-        viewing={viewing}
-        onSelect={setViewing}
-      />
+      <StepBar current={current} viewing={viewing} onSelect={setViewing} />
+      {readOnly && (
+        <View style={[styles.note, styles.row, { gap: 10 }]}>
+          <Ionicons name="eye-outline" size={20} color={P.ink} />
+          <Text style={[styles.text, { flex: 1 }]}>
+            Looking back at {STEPS[viewing].toLowerCase()}. Nothing can be
+            changed here.
+          </Text>
+        </View>
+      )}
       {o.status === "completed" && viewing === 2 ? (
         <Done view={v} />
       ) : viewing === 0 ? (
@@ -109,6 +115,99 @@ export function OrganizerView({
       )}
       <MoreOptions view={v} refresh={refresh} />
     </>
+  );
+}
+
+/**
+ * The three organizer steps as one bar. Finished steps can be tapped to look
+ * back at them; the current step is highlighted; later steps are locked.
+ */
+function StepBar({
+  current,
+  viewing,
+  onSelect,
+}: {
+  current: number;
+  viewing: number;
+  onSelect: (i: number) => void;
+}) {
+  const active = Math.min(current, STEPS.length - 1);
+  return (
+    <View style={{ gap: 8 }}>
+      <View style={{ flexDirection: "row", gap: 6 }}>
+        {STEPS.map((label, i) => {
+          const done = i < current;
+          const isCurrent = i === active && current < STEPS.length;
+          const selected = i === viewing;
+          const locked = i > active;
+          return (
+            <Pressable
+              key={label}
+              accessibilityRole="tab"
+              accessibilityState={{ selected, disabled: locked }}
+              accessibilityLabel={`Step ${i + 1}, ${label}${done ? ", done" : isCurrent ? ", now" : ", later"}`}
+              disabled={locked}
+              onPress={() => onSelect(i)}
+              style={{
+                flex: 1,
+                borderRadius: 14,
+                paddingVertical: 10,
+                paddingHorizontal: 8,
+                gap: 4,
+                alignItems: "center",
+                backgroundColor: selected ? brand.greenDark : P.paper,
+                borderWidth: 1.5,
+                borderColor: selected ? brand.greenDark : P.line,
+                opacity: locked ? 0.5 : 1,
+              }}
+            >
+              <View
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 12,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: selected
+                    ? P.white
+                    : done
+                      ? brand.greenSoft
+                      : P.track,
+                }}
+              >
+                {done ? (
+                  <Ionicons
+                    name="checkmark"
+                    size={15}
+                    color={brand.greenDeep}
+                  />
+                ) : locked ? (
+                  <Ionicons name="lock-closed" size={12} color={P.muted} />
+                ) : (
+                  <Text style={[type.label, { fontSize: 12 }]}>{i + 1}</Text>
+                )}
+              </View>
+              <Text
+                style={[
+                  type.label,
+                  { fontSize: 13, color: selected ? P.white : P.ink },
+                ]}
+              >
+                {label}
+              </Text>
+              <Text
+                style={[
+                  type.mono,
+                  { fontSize: 11, color: selected ? brand.greenSoft : P.muted },
+                ]}
+              >
+                {done ? "Done · view" : isCurrent ? "Now" : "Later"}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -191,12 +290,10 @@ function CollectStep({
       <StepHeader
         title="Collecting shares"
         detail={
-          readOnly
-            ? "Shares are closed. This is what members committed."
-            : `Members can join and change shares until ${when(o.deadline)}`
+          readOnly ? "Shares are closed." : `Open until ${when(o.deadline)}`
         }
       />
-      <View style={styles.note}>
+      <View style={styles.card}>
         <View style={styles.between}>
           <Text style={styles.text}>Members joined</Text>
           <Text style={styles.h3}>
@@ -205,29 +302,33 @@ function CollectStep({
         </View>
         <ProgressBar value={o.memberCount} total={o.maxMembers} />
       </View>
-      {v.items.map((i) => {
-        const capacity = i.packCount * i.sharesPerPack;
-        return (
-          <View key={i.id} style={{ gap: 6 }}>
-            <View style={styles.between}>
-              <ItemIcon item={i} size={26} />
-              <Text style={[styles.h3, { flex: 1 }]}>{i.name}</Text>
-              <Text style={styles.text}>
-                {i.claimed} / {capacity} shares
+      <MoneyCard view={v} />
+      <View style={[styles.card, { gap: 16 }]}>
+        <Text style={styles.label}>Shares claimed</Text>
+        {v.items.map((i) => {
+          const capacity = i.packCount * i.sharesPerPack;
+          return (
+            <View key={i.id} style={{ gap: 6 }}>
+              <View style={styles.between}>
+                <ItemIcon item={i} size={26} />
+                <Text style={[styles.h3, { flex: 1 }]}>{i.name}</Text>
+                <Text style={styles.text}>
+                  {i.claimed} / {capacity} shares
+                </Text>
+              </View>
+              <Text style={styles.muted}>{describeShare(i).share}</Text>
+              <ProgressBar value={i.claimed} total={capacity} />
+              <Text style={styles.muted}>
+                {i.claimed === 0
+                  ? "No shares yet."
+                  : i.shortfall > 0
+                    ? `${i.shortfall} more to fill the last pack`
+                    : "Packs full"}
               </Text>
             </View>
-            <Text style={styles.muted}>{describeShare(i).share}</Text>
-            <ProgressBar value={i.claimed} total={capacity} />
-            <Text style={styles.muted}>
-              {i.claimed === 0
-                ? "No shares yet."
-                : i.shortfall > 0
-                  ? `${i.shortfall} more share${i.shortfall === 1 ? "" : "s"} would fill the last pack.`
-                  : "Every pack needed so far is full."}
-            </Text>
-          </View>
-        );
-      })}
+          );
+        })}
+      </View>
       <Collapsible
         title="Who’s in"
         summary={`${v.members.length} member${v.members.length === 1 ? "" : "s"}`}
@@ -246,6 +347,9 @@ function CollectStep({
                 "No shares"}{" "}
               · {m.attending ? "Pickup confirmed" : "Pickup not confirmed"}
             </Text>
+            {m.userId !== v.order.organizerId && m.estimateCents > 0 && (
+              <PaidBadge member={m} />
+            )}
           </View>
         ))}
       </Collapsible>
@@ -257,14 +361,12 @@ function CollectStep({
         <Advance
           view={v}
           to="locked"
-          label="Close shares and make the shopping list"
-          warning="Members won’t be able to change or release shares after this."
+          label="Close shares"
+          warning="Members can’t change their shares after this. You’ll get the shopping list."
           refresh={refresh}
           disabled={claimedTotal === 0}
           blocker={
-            claimedTotal === 0
-              ? "You can close shares once someone has claimed one."
-              : undefined
+            claimedTotal === 0 ? "Waiting for the first share." : undefined
           }
         />
       )}
@@ -306,9 +408,7 @@ function AddItems({
         onToggle={setRequestsOpen}
       >
         {r.data?.length === 0 && (
-          <Text style={styles.muted}>
-            Members can ask you to add items while shares are open.
-          </Text>
+          <Text style={styles.muted}>No requests yet.</Text>
         )}
         {[...waiting, ...answered].map((q) => (
           <RequestCard
@@ -448,7 +548,7 @@ function InviteTools({ view: v }: { view: OrderView }) {
     queryParams: { invite: v.inviteToken },
   });
   return (
-    <Collapsible title="Invite people" summary="Share a link or send an email">
+    <Collapsible title="Invite people" summary="Link or email">
       <Text selectable style={styles.muted}>
         {link}
       </Text>
@@ -481,9 +581,6 @@ function InviteTools({ view: v }: { view: OrderView }) {
       >
         Send invitation
       </Button>
-      <Text style={styles.muted}>
-        Share only with people you want in this group.
-      </Text>
       <ErrorText message={a.error} />
     </Collapsible>
   );
@@ -513,12 +610,13 @@ function ShopStep({
         title="Shopping list"
         detail={
           shopping
-            ? "Check off each item as it goes in the cart."
-            : "Review the list, then start shopping when you’re at the store."
+            ? "Tick items as they go in the cart."
+            : "Start when you’re at the store."
         }
       />
+      <MoneyCard view={v} />
       {shopping && (
-        <View style={styles.note}>
+        <View style={styles.card}>
           <View style={styles.between}>
             <Text style={styles.text}>In the cart</Text>
             <Text style={styles.h3}>
@@ -558,32 +656,39 @@ function ShopStep({
           view={v}
           to="shopping"
           label="Start shopping"
-          warning="You’ll check off items as you buy them."
+          warning="You’ll tick items off as you buy them."
           refresh={refresh}
           disabled={pending > 0 || needed.length === 0}
           blocker={
             pending > 0
               ? `Decide what to do with ${pending} unfilled pack${pending === 1 ? "" : "s"} first.`
               : needed.length === 0
-                ? "Nothing needs buying. You can cancel this order under More options."
+                ? "Nothing to buy. You can cancel under More options."
                 : undefined
           }
         />
       )}
       {!readOnly && shopping && (
-        <Advance
-          view={v}
-          to="ready"
-          label="Done shopping"
-          warning="Pickup opens and each member gets a collection code to show you."
-          refresh={refresh}
-          disabled={bought < needed.length}
-          blocker={
-            bought < needed.length
-              ? `Check off ${needed.length - bought} more item${needed.length - bought === 1 ? "" : "s"} first.`
-              : undefined
-          }
-        />
+        <>
+          {bought === needed.length && (
+            <ProofUpload view={v} refresh={refresh} />
+          )}
+          <Advance
+            view={v}
+            to="ready"
+            label="Done shopping"
+            warning="Pickup opens and members get their codes. They’ll see your receipt and photo."
+            refresh={refresh}
+            disabled={bought < needed.length || !v.proof}
+            blocker={
+              bought < needed.length
+                ? `${needed.length - bought} item${needed.length - bought === 1 ? "" : "s"} left to buy`
+                : !v.proof
+                  ? "Upload the receipt and a photo of the items first."
+                  : undefined
+            }
+          />
+        </>
       )}
     </>
   );
@@ -615,10 +720,10 @@ function ShopItem({
   return (
     <View
       style={{
-        borderWidth: 1,
-        borderColor: shopping && i.bought ? P.ink : P.line,
-        borderRadius: 10,
-        backgroundColor: P.paper,
+        borderWidth: 1.5,
+        borderColor: shopping && i.bought ? brand.greenDark : P.line,
+        borderRadius: 18,
+        backgroundColor: shopping && i.bought ? brand.greenSoft : P.paper,
         padding: 14,
         gap: 8,
       }}
@@ -650,11 +755,8 @@ function ShopItem({
       {i.shortfall > 0 && i.available && !readOnly && (
         <View style={styles.note}>
           <Text style={styles.text}>
-            {i.shortfall} share{i.shortfall === 1 ? "" : "s"} in the last pack
-            weren’t claimed.
-          </Text>
-          <Text style={styles.muted}>
-            Buy the pack anyway (you keep the extra) or skip this item.
+            {i.shortfall} share{i.shortfall === 1 ? "" : "s"} unclaimed in the
+            last pack. Buy it anyway (you keep the extra) or skip?
           </Text>
           <View style={[styles.row, { flexWrap: "wrap", gap: 8 }]}>
             <Choice
@@ -673,7 +775,7 @@ function ShopItem({
       {!readOnly && (
         <Collapsible
           title="Price or stock changed?"
-          summary="Update the pack price or mark it unavailable"
+          summary="Update price or availability"
         >
           <Check
             label={i.available ? "In stock" : "Unavailable at the store"}
@@ -698,9 +800,6 @@ function ShopItem({
           >
             Update price
           </Button>
-          <Text style={styles.muted}>
-            Members are notified when a price or availability changes.
-          </Text>
         </Collapsible>
       )}
       {!!i.storage && <Text style={styles.muted}>{i.storage}</Text>}
@@ -721,7 +820,8 @@ function HandOutStep({
 }) {
   const o = v.order;
   const bags = bagsOf(v);
-  const collected = bags.filter((m) => m.collectedAt).length;
+  // A no-show counts as dealt with: the organizer keeps that bag.
+  const collected = bags.filter((m) => m.collectedAt || m.noShowAt).length;
   return (
     <>
       <StepHeader
@@ -729,7 +829,7 @@ function HandOutStep({
         detail={`${o.pickupLocation} · ${when(o.pickupAt)} – ${when(o.pickupEnd)}`}
       />
       <DirectionsButton order={o} />
-      <View style={styles.note}>
+      <View style={styles.card}>
         <View style={styles.between}>
           <Text style={styles.text}>Bags handed out</Text>
           <Text style={styles.h3}>
@@ -747,12 +847,18 @@ function HandOutStep({
           readOnly={readOnly}
         />
       ))}
+      {o.status === "ready" && bags.length > 0 && collected === bags.length && (
+        <Celebrate
+          title="Every bag is handed out"
+          body="All pickup codes were confirmed. Finish the group to wrap up."
+        />
+      )}
       {!readOnly && o.status === "ready" && (
         <Advance
           view={v}
           to="completed"
-          label="Complete order"
-          warning="This closes the order and moves it to history."
+          label="Finish group"
+          warning="This moves the group to Done."
           refresh={refresh}
           disabled={collected < bags.length}
           blocker={
@@ -779,15 +885,26 @@ function HandOutBag({
 }) {
   const a = useAction(),
     [code, setCode] = useState("");
+  const holdUntil = Date.parse(v.order.pickupEnd) + 24 * 3600000;
+  const missed = Date.now() > Date.parse(v.order.pickupEnd);
+  const [confirmNoShow, setConfirmNoShow] = useState(false);
   const status = m.collectedAt
     ? `Collected · ${when(m.collectedAt)}`
-    : m.arrived
-      ? "Here now · waiting for handoff"
-      : m.attending
-        ? "Not here yet"
-        : "Not here yet · pickup not confirmed";
+    : m.noShowAt
+      ? "No-show · bag and payment are yours"
+      : missed
+        ? "Missed pickup · holding the bag"
+        : m.arrived
+          ? "Here now · waiting for handoff"
+          : m.attending
+            ? "Not here yet"
+            : "Not here yet · pickup not confirmed";
   return (
-    <Collapsible title={m.name} summary={status} defaultOpen={!m.collectedAt}>
+    <Collapsible
+      title={m.name}
+      summary={`${status}${m.userId === v.order.organizerId ? " · Your own bag" : m.dueCents > 0 ? ` · Owes ${money(m.dueCents)}` : " · Paid"}`}
+      defaultOpen={!m.collectedAt}
+    >
       <View style={styles.row}>
         <View
           style={{
@@ -807,7 +924,8 @@ function HandOutBag({
               .join("")}
           </Text>
         </View>
-        <Text style={styles.h3}>{m.name}</Text>
+        <Text style={[styles.h3, { flex: 1 }]}>{m.name}</Text>
+        {m.userId !== v.order.organizerId && <PaidBadge member={m} />}
       </View>
       {m.claims
         .filter((c) => c.available && c.quantity > 0)
@@ -819,11 +937,11 @@ function HandOutBag({
             cost={money(c.estimateCents)}
           />
         ))}
-      <Text style={styles.muted}>
-        {money(m.estimateCents)} estimated product cost
-      </Text>
+      <Text style={styles.muted}>{money(m.estimateCents)} estimated</Text>
       {m.collectedAt ? (
-        <Text style={styles.h3}>Handed out ✓</Text>
+        <Badge tone="good">Handed out</Badge>
+      ) : m.noShowAt ? (
+        <Badge tone="urgent">No-show</Badge>
       ) : (
         !readOnly && (
           <>
@@ -833,7 +951,7 @@ function HandOutBag({
               autoCorrect={false}
               value={code}
               onChangeText={setCode}
-              placeholder="Ask them to show their code"
+              placeholder="From their phone"
             />
             <Button
               disabled={a.busy || !code.trim()}
@@ -850,6 +968,56 @@ function HandOutBag({
             >
               Confirm handoff
             </Button>
+            {missed && m.userId !== v.order.organizerId && (
+              <View style={[styles.note, { gap: 8 }]}>
+                {Date.now() < holdUntil ? (
+                  <Text style={styles.text}>
+                    {m.name.split(" ")[0]} missed the pickup window. Hold their
+                    bag until {when(new Date(holdUntil).toISOString())} in case
+                    they come late. After that you can mark a no-show.
+                  </Text>
+                ) : confirmNoShow ? (
+                  <>
+                    <Text style={styles.text}>
+                      Mark {m.name.split(" ")[0]} as a no-show? You keep the
+                      items and their payment, and they get a no-show mark.
+                    </Text>
+                    <Button
+                      danger
+                      disabled={a.busy}
+                      onPress={() =>
+                        void a.run(async () => {
+                          await post(`/orders/${v.order.id}/no-show`, {
+                            userId: m.userId,
+                          });
+                          await refresh();
+                        })
+                      }
+                    >
+                      Yes, mark no-show
+                    </Button>
+                    <Button secondary onPress={() => setConfirmNoShow(false)}>
+                      Not yet
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    secondary
+                    danger
+                    onPress={() => setConfirmNoShow(true)}
+                  >
+                    Mark as no-show
+                  </Button>
+                )}
+                <Text
+                  accessibilityRole="link"
+                  onPress={() => router.push("/policies")}
+                  style={[type.label, { color: P.carrot, fontSize: 13 }]}
+                >
+                  No-show policy
+                </Text>
+              </View>
+            )}
           </>
         )
       )}
@@ -860,17 +1028,147 @@ function HandOutBag({
 
 function Done({ view: v }: { view: OrderView }) {
   const bags = bagsOf(v);
+  const collected = v.members
+    .filter((m) => m.userId !== v.order.organizerId)
+    .reduce((n, m) => n + m.paidCents, 0);
   return (
-    <View style={styles.note}>
-      <Text style={styles.h2}>Order complete</Text>
-      <Text style={styles.text}>
-        {bags.length} bag{bags.length === 1 ? "" : "s"} handed out. Thanks for
-        organizing!
+    <Celebrate
+      title="Group complete!"
+      body={`${bags.length} bag${bags.length === 1 ? "" : "s"} handed out and every code confirmed. Thanks for organizing.`}
+    >
+      <View style={[styles.row, { gap: 8, alignSelf: "stretch" }]}>
+        {[
+          [String(bags.length), "Bags"],
+          [String(v.members.length), "Members"],
+          [money(collected), "Collected"],
+        ].map(([n, label]) => (
+          <View
+            key={label}
+            style={{
+              flex: 1,
+              backgroundColor: P.white,
+              borderRadius: 14,
+              padding: 10,
+              alignItems: "center",
+            }}
+          >
+            <Text style={[type.total, { fontSize: 20 }]}>{n}</Text>
+            <Text style={type.mono}>{label}</Text>
+          </View>
+        ))}
+      </View>
+    </Celebrate>
+  );
+}
+
+/** Big "you finished this step" frame. */
+function Celebrate({
+  title,
+  body,
+  children,
+}: {
+  title: string;
+  body: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <View
+      style={[
+        styles.card,
+        {
+          alignItems: "center",
+          gap: 10,
+          paddingVertical: 24,
+          backgroundColor: brand.greenSoft,
+        },
+      ]}
+    >
+      <View
+        style={{
+          width: 68,
+          height: 68,
+          borderRadius: 34,
+          backgroundColor: brand.greenDark,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Ionicons name="checkmark-done" size={36} color={P.white} />
+      </View>
+      <Text style={[type.title, { fontSize: 26, textAlign: "center" }]}>
+        {title}
       </Text>
-      <Text style={styles.muted}>
-        To run it again, use “Repeat as a new draft” below.
-      </Text>
+      <Text style={[styles.text, { textAlign: "center" }]}>{body}</Text>
+      {children}
     </View>
+  );
+}
+
+/** Money members have paid in, so the organizer knows what they can spend. */
+function MoneyCard({ view: v }: { view: OrderView }) {
+  const members = v.members.filter((m) => m.estimateCents > 0);
+  const expected = members.reduce(
+    (n, m) => n + m.estimateCents + m.feeCents,
+    0,
+  );
+  const unpaid = members.filter((m) => m.paidCents <= 0).length;
+  const p = v.payouts;
+  return (
+    <View style={[styles.card, { gap: 10 }]}>
+      <View style={styles.between}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.text}>Money collected</Text>
+          <Text style={type.mono}>
+            Held safely by POOLD until it’s released
+          </Text>
+        </View>
+        <Text style={styles.h3}>
+          {money(p?.collectedCents ?? 0)} of {money(expected)}
+        </Text>
+      </View>
+      <ProgressBar
+        value={p?.collectedCents ?? 0}
+        total={Math.max(expected, 1)}
+      />
+      {p && (
+        <View style={{ gap: 6 }}>
+          <View style={styles.between}>
+            <Text style={type.mono}>Released to you</Text>
+            <Text style={[type.label, { color: brand.greenDeep }]}>
+              {money(p.releasedCents)}
+            </Text>
+          </View>
+          <View style={styles.between}>
+            <Text style={type.mono}>
+              Still held
+              {p.releasedCents ? " (service fees, after hand-out)" : ""}
+            </Text>
+            <Text style={type.label}>{money(p.heldCents)}</Text>
+          </View>
+          <Text style={[type.mono, { fontSize: 12 }]}>
+            {v.order.status === "open" || v.order.status === "locked"
+              ? "The item money is released when you start shopping. The 5% service fees come after every bag is handed out."
+              : p.heldCents > 0
+                ? "The 5% service fees are released after every bag is handed out."
+                : "Everything has been released. Test mode, no real money."}
+          </Text>
+        </View>
+      )}
+      {unpaid > 0 && ["open", "locked"].includes(v.order.status) && (
+        <Text style={[type.mono, { color: P.beet }]}>
+          {unpaid} {unpaid === 1 ? "person hasn’t" : "people haven’t"} paid.
+          Unpaid shares are dropped when shares close.
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function PaidBadge({ member: m }: { member: Member }) {
+  return m.dueCents > 0 ? (
+    <Badge tone="urgent">{`Owes ${money(m.dueCents)}`}</Badge>
+  ) : (
+    <Badge tone="good">{`Paid ${money(m.paidCents)}`}</Badge>
   );
 }
 
@@ -887,19 +1185,12 @@ function DraftReview({
   return (
     <>
       <View style={styles.note}>
-        <Text style={styles.h3}>Review before publishing</Text>
+        <Text style={styles.h3}>Ready to publish?</Text>
         <Text style={styles.muted}>
           {o.visibility === "private"
-            ? "Only people with your invite link can join."
-            : "This order will appear in Community."}{" "}
-          Membership limit: {o.maxMembers}, including you.{" "}
-          {o.cadence !== "once"
-            ? `Intended cadence: ${o.cadence}. Each repeat needs a new draft.`
-            : ""}
-        </Text>
-        <Text style={styles.muted}>
-          Shares close {when(o.deadline)} · Pickup {when(o.pickupAt)} at{" "}
-          {o.pickupLocation}
+            ? "Only people with your link can join."
+            : "Everyone can find it in Browse."}{" "}
+          Shares close {when(o.deadline)}.
         </Text>
       </View>
       <Collapsible
@@ -941,7 +1232,7 @@ function DraftReview({
           })
         }
       >
-        Publish order
+        Publish group
       </Button>
     </>
   );
@@ -959,7 +1250,7 @@ function MoreOptions({
     [repeat, setRepeat] = useState(false);
   const ended = ["completed", "cancelled"].includes(o.status);
   return (
-    <Collapsible title="More options" summary="Repeat or cancel this order">
+    <Collapsible title="More options" summary="Repeat or cancel">
       <Button secondary onPress={() => setRepeat(!repeat)}>
         {repeat ? "Close repeat setup" : "Repeat as a new draft"}
       </Button>
@@ -968,8 +1259,8 @@ function MoreOptions({
         <Advance
           view={v}
           to="cancelled"
-          label="Cancel order"
-          warning="This ends the order for everyone and invalidates collection codes."
+          label="Cancel group"
+          warning="This ends the group for everyone."
           refresh={refresh}
         />
       )}
@@ -990,9 +1281,6 @@ function RepeatOrder({ orderId }: { orderId: string }) {
     next < d ? (set(new Date(d.getTime() + 2 * HOUR)), true) : false;
   return (
     <View style={styles.note}>
-      <Text style={styles.muted}>
-        Choose the new dates. You’ll review the new draft before publishing.
-      </Text>
       <DateTimeField
         label="Shares close"
         value={deadline}
@@ -1045,6 +1333,171 @@ function RepeatOrder({ orderId }: { orderId: string }) {
         }
       >
         Create repeat draft
+      </Button>
+    </View>
+  );
+}
+
+/** Pick a photo and return it as a small data URL. */
+async function pickPhoto(camera: boolean) {
+  const options = {
+    mediaTypes: ["images"] as ImagePicker.MediaType[],
+    quality: 0.35,
+    base64: true,
+  };
+  const result = camera
+    ? await ImagePicker.launchCameraAsync(options).catch(() =>
+        ImagePicker.launchImageLibraryAsync(options),
+      )
+    : await ImagePicker.launchImageLibraryAsync(options);
+  if (result.canceled) return null;
+  const asset = result.assets[0];
+  if (!asset.base64) throw new Error("Couldn’t read that photo. Try another.");
+  const data = `data:${asset.mimeType ?? "image/jpeg"};base64,${asset.base64}`;
+  if (data.length > 1_400_000)
+    throw new Error("That photo is too large. Try a closer or smaller one.");
+  return data;
+}
+
+/** Proof of purchase: the full receipt and a photo of what was bought. */
+function ProofUpload({
+  view: v,
+  refresh,
+}: {
+  view: OrderView;
+  refresh: () => Promise<void>;
+}) {
+  const a = useAction();
+  const [receipt, setReceipt] = useState(v.proof?.receiptPhoto ?? ""),
+    [items, setItems] = useState(v.proof?.itemsPhoto ?? ""),
+    [total, setTotal] = useState<number | null>(
+      v.proof?.receiptTotalCents ?? null,
+    );
+  const collected = v.payouts?.collectedCents ?? 0;
+  const slot = (
+    label: string,
+    hint: string,
+    value: string,
+    set: (s: string) => void,
+  ) => (
+    <View style={{ gap: 8 }}>
+      <Text style={styles.label}>{label}</Text>
+      {value ? (
+        <Image
+          source={{ uri: value }}
+          accessibilityLabel={label}
+          style={{
+            width: "100%",
+            height: 180,
+            borderRadius: 12,
+            backgroundColor: P.track,
+          }}
+          resizeMode="cover"
+        />
+      ) : (
+        <View
+          style={{
+            height: 110,
+            borderRadius: 12,
+            borderWidth: 1.5,
+            borderStyle: "dashed",
+            borderColor: P.lineStrong,
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 4,
+          }}
+        >
+          <Ionicons name="camera-outline" size={26} color={P.muted} />
+          <Text style={type.mono}>{hint}</Text>
+        </View>
+      )}
+      <View style={[styles.row, { gap: 8 }]}>
+        <View style={{ flex: 1 }}>
+          <Button
+            secondary
+            icon="camera-outline"
+            disabled={a.busy}
+            onPress={() =>
+              void a.run(async () => {
+                const d = await pickPhoto(true);
+                if (d) set(d);
+              })
+            }
+          >
+            Take photo
+          </Button>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Button
+            secondary
+            icon="image-outline"
+            disabled={a.busy}
+            onPress={() =>
+              void a.run(async () => {
+                const d = await pickPhoto(false);
+                if (d) set(d);
+              })
+            }
+          >
+            Choose
+          </Button>
+        </View>
+      </View>
+    </View>
+  );
+  return (
+    <View style={[styles.card, { gap: 14 }]}>
+      <View style={styles.between}>
+        <Text style={styles.h2}>Proof of purchase</Text>
+        {v.proof ? (
+          <Badge tone="good">Uploaded</Badge>
+        ) : (
+          <Badge tone="urgent">Required</Badge>
+        )}
+      </View>
+      <Text style={styles.muted}>
+        Members see these so everyone knows what was spent.
+      </Text>
+      {slot(
+        "Full receipt",
+        "Show the whole receipt with the total",
+        receipt,
+        setReceipt,
+      )}
+      {slot(
+        "Photo of the items",
+        "Everything you bought, together",
+        items,
+        setItems,
+      )}
+      <CurrencyField
+        label="Receipt total (CAD)"
+        valueCents={total}
+        onChangeCents={setTotal}
+      />
+      {!!total && collected > 0 && (
+        <Text style={type.mono}>
+          Members paid {money(collected)} including fees.
+          {total > collected
+            ? " The receipt is higher than what was collected."
+            : ""}
+        </Text>
+      )}
+      <ErrorText message={a.error} />
+      <Button
+        disabled={a.busy || !receipt || !items || !total}
+        onPress={() =>
+          void a.run(async () => {
+            await post(`/orders/${v.order.id}/proof`, {
+              receiptPhoto: receipt,
+              itemsPhoto: items,
+              receiptTotalCents: total,
+            });
+            await refresh();
+          })
+        }
+      >
+        {a.busy ? "Uploading…" : v.proof ? "Update proof" : "Upload proof"}
       </Button>
     </View>
   );

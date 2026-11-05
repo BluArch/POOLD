@@ -1,10 +1,12 @@
-import { palette as P } from "../../theme";
+import { palette as P, type, brand } from "../../theme";
 import React, { useState, useEffect } from "react";
 import { View, Text } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import {
   type OrderInput,
   type OrderView,
+  type Wishlist,
+  CATALOG,
   PICKUP_PLACES,
 } from "@poold/contracts";
 import { api, post } from "../../api";
@@ -26,6 +28,7 @@ import {
   ItemEditor,
   type ItemDraft,
   emptyDraft,
+  draftFromCatalog,
   draftFromItem,
   draftProblems,
   draftToInput,
@@ -36,10 +39,19 @@ const later = (h: number) => roundUp(new Date(Date.now() + h * HOUR));
 const STORES = ["Costco", "Walmart", "Real Canadian Superstore"] as const;
 
 export default function Create() {
-  const { id } = useLocalSearchParams<{ id?: string }>();
-  return <DraftForm key={id ?? "new"} id={id} />;
+  const { id, wishlist } = useLocalSearchParams<{
+    id?: string;
+    wishlist?: string;
+  }>();
+  return (
+    <DraftForm
+      key={id ?? wishlist ?? "new"}
+      id={id}
+      wishlistId={id ? undefined : wishlist}
+    />
+  );
 }
-function DraftForm({ id }: { id?: string }) {
+function DraftForm({ id, wishlistId }: { id?: string; wishlistId?: string }) {
   const a = useAction();
   const [loaded, setLoaded] = useState(!id);
   const [name, setName] = useState(""),
@@ -90,6 +102,28 @@ function DraftForm({ id }: { id?: string }) {
   useEffect(() => {
     if (id) void load();
   }, [id]);
+
+  // Starting from a buyers' wishlist: fill in what they asked for.
+  const [wish, setWish] = useState<Wishlist | null>(null);
+  useEffect(() => {
+    if (!wishlistId) return;
+    void a.run(async () => {
+      const w = await api<Wishlist>(`/wishlists/${wishlistId}`);
+      setWish(w);
+      setName(w.title);
+      setStore(w.store);
+      setLocation(w.pickupLocation);
+      setCoords(PICKUP_PLACES.find((p) => p.name === w.pickupLocation) ?? null);
+      setItems(
+        w.items.map((i) => {
+          const c = CATALOG.find((x) => x.key === i.catalogKey);
+          return c
+            ? draftFromCatalog(c)
+            : { ...emptyDraft(), name: i.name, chosen: true };
+        }),
+      );
+    });
+  }, [wishlistId]);
 
   // Keep the dates in order: changing an earlier date pushes later ones along.
   const changeDeadline = (d: Date) => {
@@ -147,7 +181,13 @@ function DraftForm({ id }: { id?: string }) {
       let oid = id;
       if (id)
         await api(`/orders/${id}`, { method: "PUT", body: JSON.stringify(b) });
-      else oid = (await post<{ id: string }>("/orders", b)).id;
+      else
+        oid = (
+          await post<{ id: string }>("/orders", {
+            ...b,
+            ...(wishlistId ? { wishlistId } : {}),
+          })
+        ).id;
       router.replace({
         pathname: "/(tabs)/order/[id]",
         params: { id: oid!, view: "organize" },
@@ -168,12 +208,28 @@ function DraftForm({ id }: { id?: string }) {
     );
   return (
     <Screen
-      title={id ? "Edit draft" : "Start a group"}
-      subtitle="Save a draft, review it, then publish."
+      title={
+        id ? "Edit draft" : wishlistId ? "Organize a wishlist" : "New group"
+      }
+      subtitle={id ? undefined : "Save a draft, then publish when ready"}
+      role="organizing"
       back
     >
-      <View style={styles.section}>
-        <Text style={styles.h2}>The group</Text>
+      {wish && (
+        <View
+          style={[styles.card, { backgroundColor: brand.yellowSoft, gap: 6 }]}
+        >
+          <Text style={styles.label}>From a buyers’ wishlist</Text>
+          <Text style={styles.text}>
+            {wish.memberCount}{" "}
+            {wish.memberCount === 1 ? "person wants" : "people want"} “
+            {wish.title}”. Their items are filled in below. Check prices and
+            share sizes, then save. They’ll hear when you publish.
+          </Text>
+        </View>
+      )}
+      <View style={styles.card}>
+        <Step n={1} title="The group" />
         <Field
           label="Group name"
           value={name}
@@ -202,7 +258,7 @@ function DraftForm({ id }: { id?: string }) {
         <View style={styles.between}>
           <View style={{ flex: 1 }}>
             <Text style={styles.label}>Maximum people</Text>
-            <Text style={styles.muted}>Including you, 2–10.</Text>
+            <Text style={styles.muted}>Including you</Text>
           </View>
           <QuantityStepper
             label="people"
@@ -213,14 +269,13 @@ function DraftForm({ id }: { id?: string }) {
         </View>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.h2}>When</Text>
+      <View style={styles.card}>
+        <Step n={2} title="When" />
         <DateTimeField
           label="Shares close"
           value={deadline}
           onChange={changeDeadline}
           min={new Date()}
-          hint="Members can join and change shares until then."
         />
         <DateTimeField
           label="You go shopping"
@@ -257,16 +312,10 @@ function DraftForm({ id }: { id?: string }) {
             />
           ))}
         </View>
-        {cadence !== "once" && (
-          <Text style={styles.muted}>
-            You’ll create each repeat as a new draft from the finished group.
-          </Text>
-        )}
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.h2}>Where</Text>
-        <Text style={styles.label}>Public pickup place</Text>
+      <View style={styles.card}>
+        <Step n={3} title="Pickup place" />
         <View style={{ gap: 8 }}>
           {PICKUP_PLACES.map((p) => (
             <Choice
@@ -296,24 +345,12 @@ function DraftForm({ id }: { id?: string }) {
         />
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.h2}>Items</Text>
-        <Text style={styles.muted}>
-          Pick an item and how much goes in each share. The app works out the
-          number of shares and the price per share.
-        </Text>
+      <View style={{ gap: 2, paddingHorizontal: 4 }}>
+        <Step n={4} title="Items" />
+        <Text style={styles.muted}>We work out the shares and price.</Text>
       </View>
       {items.map((d, n) => (
-        <View
-          key={n}
-          style={{
-            borderWidth: 1,
-            borderColor: P.line,
-            borderRadius: 12,
-            padding: 16,
-            gap: 12,
-          }}
-        >
+        <View key={n} style={[styles.card, { gap: 12 }]}>
           <ItemEditor
             title={items.length > 1 ? `Item ${n + 1}` : "Item"}
             value={d}
@@ -331,13 +368,17 @@ function DraftForm({ id }: { id?: string }) {
         </View>
       ))}
       {items.length < 30 && (
-        <Button secondary onPress={() => setItems([...items, emptyDraft()])}>
+        <Button
+          secondary
+          icon="add"
+          onPress={() => setItems([...items, emptyDraft()])}
+        >
           Add another item
         </Button>
       )}
       <ErrorText message={a.error} />
       <ScreenFooter>
-        <View style={styles.note}>
+        <View style={{ gap: 6 }}>
           <ErrorText message={a.error} />
           <Button disabled={a.busy} onPress={() => void save()}>
             {a.busy ? "Saving…" : "Save draft"}
@@ -345,5 +386,25 @@ function DraftForm({ id }: { id?: string }) {
         </View>
       </ScreenFooter>
     </Screen>
+  );
+}
+
+function Step({ n, title }: { n: number; title: string }) {
+  return (
+    <View style={[styles.row, { gap: 10 }]}>
+      <View
+        style={{
+          width: 26,
+          height: 26,
+          borderRadius: 13,
+          backgroundColor: brand.greenDark,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Text style={[type.label, { color: P.white, fontSize: 13 }]}>{n}</Text>
+      </View>
+      <Text style={styles.h2}>{title}</Text>
+    </View>
   );
 }

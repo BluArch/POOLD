@@ -10,6 +10,7 @@ import {
   Platform,
   ActivityIndicator,
   RefreshControl,
+  Modal,
   type TextInputProps,
   type StyleProp,
   type TextStyle,
@@ -18,7 +19,19 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "../api";
-import { palette as P, fonts, type, shape, spacing } from "../theme";
+import {
+  palette as P,
+  fonts,
+  type,
+  shape,
+  spacing,
+  roles,
+  shadow,
+  type Role,
+} from "../theme";
+import { useRole, ROLE_HOME } from "../role";
+import { getPref, setPref } from "../storage";
+import { TourTarget } from "./Tour";
 export const styles = StyleSheet.create({
   title: type.title,
   h2: type.section,
@@ -40,6 +53,13 @@ export const styles = StyleSheet.create({
     backgroundColor: P.paper,
     gap: 10,
   },
+  card: {
+    padding: 16,
+    borderRadius: shape.card,
+    backgroundColor: P.paper,
+    gap: 10,
+    ...shadow,
+  },
   input: {
     ...type.body,
     borderWidth: 1.5,
@@ -51,14 +71,12 @@ export const styles = StyleSheet.create({
   },
   error: { ...type.body, color: P.beet },
   label: type.label,
-  pill: { ...type.mono, textTransform: "uppercase" },
+  pill: { ...type.label, color: P.muted },
   note: {
-    backgroundColor: P.paper,
+    backgroundColor: P.track,
     padding: 16,
     borderRadius: shape.card,
     gap: 8,
-    borderWidth: 1,
-    borderColor: P.line,
   },
 });
 const FooterContext = React.createContext<(node: React.ReactNode) => void>(
@@ -84,6 +102,8 @@ export function Screen({
   stamp,
   footer,
   titleStyle,
+  role: roleOverride,
+  roleSwitch = false,
 }: {
   title: string;
   subtitle?: string;
@@ -95,13 +115,20 @@ export function Screen({
   stamp?: React.ReactNode;
   footer?: React.ReactNode;
   titleStyle?: StyleProp<TextStyle>;
+  /** Colour the header for this role instead of the current one. */
+  role?: Role;
+  /** Show the Buying / Organizing switch (home screens). */
+  roleSwitch?: boolean;
 }) {
   const [childFooter, setChildFooter] = useState<React.ReactNode>(null);
+  const current = useRole();
+  const colors = roles[roleOverride ?? current.role];
+  const band = back ? P.kraft : colors.header;
   return (
     <FooterContext.Provider value={setChildFooter}>
       <SafeAreaView
         edges={["top", "left", "right"]}
-        style={{ flex: 1, backgroundColor: back ? P.kraft : P.chalk }}
+        style={{ flex: 1, backgroundColor: band }}
       >
         <KeyboardAvoidingView
           style={{ flex: 1, backgroundColor: P.kraft }}
@@ -120,57 +147,77 @@ export function Screen({
               ) : undefined
             }
           >
-            <View style={{ backgroundColor: back ? P.kraft : P.chalk }}>
+            <View
+              style={{
+                backgroundColor: band,
+                borderBottomLeftRadius: back ? 0 : 28,
+                borderBottomRightRadius: back ? 0 : 28,
+              }}
+            >
               <View
                 style={{
                   width: "100%",
                   maxWidth: spacing.maxWidth,
                   alignSelf: "center",
-                  padding: spacing.page,
-                  gap: 14,
+                  paddingHorizontal: spacing.page,
+                  paddingTop: 12,
+                  paddingBottom: back ? 4 : 22,
+                  gap: 12,
                 }}
               >
                 <View style={styles.between}>
                   {back ? (
                     <IconButton
-                      name="arrow-back-outline"
+                      name="chevron-back"
                       label="Back"
                       onPress={() =>
                         router.canGoBack()
                           ? router.back()
-                          : router.replace("/(tabs)/community")
+                          : router.replace(ROLE_HOME[current.role])
                       }
                     />
                   ) : (
                     <Text
                       style={{
-                        fontFamily: fonts.italic,
+                        fontFamily: fonts.title,
                         fontSize: 24,
-                        color: P.chalkText,
+                        letterSpacing: -0.8,
+                        color: colors.headerText,
                       }}
                     >
                       poold
                     </Text>
                   )}
-                  {stamp}
+                  {roleSwitch ? (
+                    <TourTarget id="role-switch">
+                      <RoleSwitch />
+                    </TourTarget>
+                  ) : (
+                    stamp
+                  )}
                 </View>
-                <View style={{ gap: 8 }}>
+                <View style={{ gap: 4 }}>
                   {back && !!subtitle && (
-                    <Text style={type.mono}>{subtitle.toUpperCase()}</Text>
+                    <Text style={type.mono}>{subtitle}</Text>
                   )}
                   <Text
                     accessibilityRole="header"
                     style={[
                       back ? type.detailTitle : type.title,
-                      { color: back ? P.ink : P.chalkText },
+                      { color: back ? P.ink : colors.headerText },
                       titleStyle,
                     ]}
                   >
                     {title}
                   </Text>
                   {!back && !!subtitle && (
-                    <Text style={[type.mono, { color: P.chalkMuted }]}>
-                      {subtitle.toUpperCase()}
+                    <Text
+                      style={[
+                        type.body,
+                        { color: colors.headerMuted, fontSize: 14 },
+                      ]}
+                    >
+                      {subtitle}
                     </Text>
                   )}
                 </View>
@@ -183,6 +230,7 @@ export function Screen({
                 maxWidth: spacing.maxWidth,
                 alignSelf: "center",
                 padding: spacing.page,
+                paddingTop: 18,
                 gap: spacing.section,
               }}
             >
@@ -205,6 +253,153 @@ export function Screen({
         </KeyboardAvoidingView>
       </SafeAreaView>
     </FooterContext.Provider>
+  );
+}
+/** Switch between the buyer side and the organizer side of the app. */
+const SWITCH_TEXT: Record<Role, string> = {
+  buying: "You’ll see groups to join and the shares you’ve picked.",
+  organizing: "You’ll see the groups you run, plus tools to shop and hand out.",
+};
+/** Switch between the buyer side and the organizer side of the app. */
+export function RoleSwitch() {
+  const { role, setRole } = useRole();
+  const colors = roles[role];
+  const [asking, setAsking] = useState<Role | null>(null),
+    [dontAsk, setDontAsk] = useState(false);
+  const go = (r: Role) => {
+    setAsking(null);
+    setRole(r);
+    router.navigate(ROLE_HOME[r]);
+  };
+  return (
+    <>
+      <View
+        accessibilityRole="tablist"
+        style={{
+          flexDirection: "row",
+          padding: 3,
+          borderRadius: 999,
+          backgroundColor: colors.headerLight
+            ? "rgba(22,22,22,0.07)"
+            : "rgba(255,255,255,0.18)",
+        }}
+      >
+        {(["buying", "organizing"] as const).map((r) => {
+          const selected = r === role;
+          return (
+            <Pressable
+              key={r}
+              accessibilityRole="tab"
+              accessibilityState={{ selected }}
+              accessibilityLabel={roles[r].label}
+              onPress={() => {
+                if (selected) return;
+                void getPref("poold.skipSwitchConfirm").then((skip) =>
+                  skip === "yes" ? go(r) : setAsking(r),
+                );
+              }}
+              style={{
+                minHeight: 36,
+                paddingHorizontal: 12,
+                borderRadius: 999,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 5,
+                backgroundColor: selected ? P.white : "transparent",
+              }}
+            >
+              <Ionicons
+                name={roles[r].icon}
+                size={15}
+                color={selected ? roles[r].accent : colors.headerText}
+              />
+              <Text
+                style={{
+                  fontFamily: fonts.label,
+                  fontSize: 13,
+                  color: selected ? P.ink : colors.headerText,
+                }}
+              >
+                {roles[r].label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <Modal
+        visible={!!asking}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAsking(null)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(22,22,22,0.45)",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          {asking && (
+            <View
+              accessibilityViewIsModal
+              style={{
+                width: "100%",
+                maxWidth: 380,
+                backgroundColor: P.paper,
+                borderRadius: 24,
+                padding: 22,
+                gap: 12,
+                alignItems: "center",
+              }}
+            >
+              <View
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 28,
+                  backgroundColor: roles[asking].tab,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Ionicons name={roles[asking].icon} size={26} color={P.ink} />
+              </View>
+              <Text
+                accessibilityRole="header"
+                style={[type.cardTitle, { textAlign: "center" }]}
+              >
+                Switch to {roles[asking].label.toLowerCase()}?
+              </Text>
+              <Text style={[styles.muted, { textAlign: "center" }]}>
+                {SWITCH_TEXT[asking]} You can switch back any time.
+              </Text>
+              <View style={{ alignSelf: "stretch" }}>
+                <Check
+                  label="Don’t ask me again"
+                  value={dontAsk}
+                  onChange={setDontAsk}
+                />
+              </View>
+              <View style={{ alignSelf: "stretch", gap: 8 }}>
+                <Button
+                  onPress={() => {
+                    if (dontAsk) void setPref("poold.skipSwitchConfirm", "yes");
+                    go(asking);
+                  }}
+                >
+                  {`Switch to ${roles[asking].label}`}
+                </Button>
+                <Button secondary onPress={() => setAsking(null)}>
+                  {`Stay on ${roles[role].label}`}
+                </Button>
+              </View>
+            </View>
+          )}
+        </View>
+      </Modal>
+    </>
   );
 }
 export function IconButton({
@@ -233,7 +428,7 @@ export function IconButton({
         borderColor: P.line,
       })}
     >
-      <Ionicons name={name} size={25} color={P.chalk} />
+      <Ionicons name={name} size={22} color={P.ink} />
     </Pressable>
   );
 }
@@ -244,6 +439,7 @@ export function Button({
   disabled = false,
   danger = false,
   variant,
+  icon,
 }: {
   children: string;
   onPress: () => void;
@@ -251,6 +447,7 @@ export function Button({
   disabled?: boolean;
   danger?: boolean;
   variant?: "primary" | "secondary" | "outline" | "danger";
+  icon?: React.ComponentProps<typeof Ionicons>["name"];
 }) {
   const v = variant ?? (secondary ? "outline" : danger ? "danger" : "primary");
   const background =
@@ -261,14 +458,7 @@ export function Button({
         : v === "danger"
           ? P.beet
           : P.paper;
-  const color =
-    v === "secondary" || v === "danger"
-      ? P.chalkText
-      : danger
-        ? P.beet
-        : v === "primary"
-          ? P.actionInk
-          : P.ink;
+  const color = v === "outline" ? (danger ? P.beet : P.ink) : P.white;
   return (
     <Pressable
       accessibilityRole="button"
@@ -279,35 +469,26 @@ export function Button({
         minHeight: 50,
         paddingVertical: 13,
         paddingHorizontal: 20,
-        ...(v === "primary" ? shape.tag : { borderRadius: 26 }),
+        borderRadius: 999,
         borderWidth: v === "outline" ? 1.5 : 0,
-        borderColor: P.lineStrong,
+        borderColor: danger ? "#E7B8B3" : P.line,
+        flexDirection: "row",
+        gap: 8,
         alignItems: "center",
         justifyContent: "center",
         backgroundColor: background,
-        opacity: disabled ? 0.4 : pressed ? 0.7 : 1,
+        opacity: disabled ? 0.4 : pressed ? 0.75 : 1,
       })}
     >
-      {v === "primary" && (
-        <View
-          accessible={false}
-          style={{
-            position: "absolute",
-            left: 9,
-            width: 6,
-            height: 6,
-            borderRadius: 3,
-            backgroundColor: P.paper,
-          }}
-        />
-      )}
+      {icon && <Ionicons name={icon} size={19} color={color} />}
       <Text
         style={{
-          fontFamily: fonts.bold,
+          fontFamily: fonts.label,
           fontSize: 15,
-          lineHeight: 22,
+          lineHeight: 21,
           color,
           textAlign: "center",
+          flexShrink: 1,
         }}
       >
         {children}
@@ -363,7 +544,7 @@ export function Choice({
         paddingHorizontal: 14,
         borderWidth: 1,
         borderColor: selected ? P.ink : P.line,
-        borderRadius: 10,
+        borderRadius: 999,
         backgroundColor: selected ? P.chalk : P.paper,
       }}
     >
@@ -371,8 +552,7 @@ export function Choice({
         style={{
           fontSize: 14,
           fontFamily: fonts.label,
-          color: selected ? P.chalkText : P.muted,
-          fontWeight: selected ? "600" : "400",
+          color: selected ? P.chalkText : P.ink,
         }}
       >
         {label}
@@ -460,28 +640,32 @@ export function EmptyState({
   title,
   message,
   children,
+  icon = "basket-outline",
 }: {
   title: string;
   message: string;
   children?: React.ReactNode;
+  icon?: React.ComponentProps<typeof Ionicons>["name"];
 }) {
   return (
-    <View style={styles.note}>
+    <View style={[styles.note, { alignItems: "center", paddingVertical: 24 }]}>
       <View
         style={{
           width: 48,
           height: 48,
           borderRadius: 12,
-          backgroundColor: P.track,
+          backgroundColor: P.paper,
           alignItems: "center",
           justifyContent: "center",
         }}
       >
-        <Ionicons name="basket-outline" size={26} color={P.chalk} />
+        <Ionicons name={icon} size={26} color={P.ink} />
       </View>
-      <Text style={styles.h3}>{title}</Text>
-      <Text style={styles.muted}>{message}</Text>
-      {children}
+      <Text style={[styles.h3, { textAlign: "center" }]}>{title}</Text>
+      <Text style={[styles.muted, { textAlign: "center" }]}>{message}</Text>
+      {children && (
+        <View style={{ alignSelf: "stretch", gap: 8 }}>{children}</View>
+      )}
     </View>
   );
 }
@@ -492,15 +676,7 @@ export function ResourceState({
 }) {
   return (
     <>
-      {resource.loading && (
-        <View style={styles.note}>
-          <Loading />
-          <Text style={styles.h3}>Getting things ready</Text>
-          <Text style={styles.muted}>
-            Your group details will be here shortly.
-          </Text>
-        </View>
-      )}
+      {resource.loading && <Loading />}
       {!!resource.error && (
         <View style={styles.note}>
           <Text style={styles.h3}>Couldn’t load this</Text>

@@ -122,6 +122,15 @@ export const profileInput = z
       /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(b.photo),
     "Choose a small PNG, JPEG or WebP photo.",
   );
+/** Only UVic students can use POOLD. */
+export const isUvicEmail = (email: string) =>
+  /^[^@\s]+@uvic\.ca$/i.test(email.trim());
+
+/** Buyers pay a 5% service fee to the organizer; organizers don't pay it. */
+export const FEE_RATE = 0.05;
+export const feeFor = (sharesCents: number, organizer = false) =>
+  organizer ? 0 : Math.round(sharesCents * FEE_RATE);
+
 export const registerInput = z.object({
   name: z
     .string({ error: "Enter your display name." })
@@ -129,9 +138,13 @@ export const registerInput = z.object({
     .min(1, "Enter your display name.")
     .max(60, "Your display name must be 60 characters or fewer."),
   email: z
-    .email({ error: "Enter a valid email address, like name@example.com." })
+    .email({ error: "Enter your UVic email, like name@uvic.ca." })
     .max(254, "Your email address must be 254 characters or fewer.")
-    .transform((s) => s.toLowerCase()),
+    .transform((s) => s.trim().toLowerCase())
+    .refine(
+      isUvicEmail,
+      "POOLD is for UVic students. Use your @uvic.ca email.",
+    ),
   password: z
     .string({ error: "Enter a password with at least 8 characters." })
     .min(8, "Your password must be at least 8 characters long.")
@@ -164,6 +177,12 @@ export interface User {
   photo: string | null;
   demo: boolean;
   completed: number;
+  /** Your rating as an organizer. */
+  rating: { average: number; count: number } | null;
+  /** Missed pickups in the last 90 days. 3 blocks joining for 30 days. */
+  noShows: number;
+  /** When set, you can't join new groups until this time. */
+  blockedUntil: string | null;
 }
 export interface OrderSummary {
   id: string;
@@ -184,6 +203,10 @@ export interface OrderSummary {
   organizerName: string;
   organizerId: string;
   joined: boolean;
+  /** Shares the signed-in user has claimed in this group. */
+  myShares: number;
+  /** Organizer's average rating from buyers, and how many ratings. */
+  organizerRating: { average: number; count: number } | null;
   preview: string;
   previewItems?: {
     name: string;
@@ -242,7 +265,28 @@ export interface Member {
   packed: boolean;
   collectedAt: string | null;
   claims: Claim[];
+  /** Cost of the shares themselves. */
   estimateCents: number;
+  /** 5% service fee for the organizer (0 for the organizer's own shares). */
+  feeCents: number;
+  /** Set when the member missed pickup and the grace period ended. */
+  noShowAt: string | null;
+  /** Test-mode money paid for these shares, minus refunds. No real money moves. */
+  paidCents: number;
+  /** Still to pay (estimate minus what's paid); 0 when settled. */
+  dueCents: number;
+  /** Payments and refunds, newest first. */
+  payments: Payment[];
+}
+export interface Payment {
+  id: string;
+  kind: "payment" | "refund";
+  amountCents: number;
+  createdAt: string;
+  ref: string | null;
+  cardBrand: string | null;
+  cardLast4: string | null;
+  note: string | null;
 }
 export interface OrderView {
   order: OrderSummary;
@@ -254,7 +298,55 @@ export interface OrderView {
   inviteToken?: string;
   collectionCode?: string;
   isOrganizer: boolean;
+  /** How payments run: Stripe test checkout, or a built-in demo screen. */
+  payments: "stripe_test" | "demo";
+  /** Service fee on your shares (0 if you organize this group). */
+  myFeeCents: number;
+  /** Organizer only: money held by POOLD and what's been released to them. */
+  payouts?: PayoutSummary;
+  /** Receipt and items photo, uploaded after shopping. */
+  proof: ShoppingProof | null;
+  /** Your rating for this group's organizer, if you gave one. */
+  myRating: number | null;
+  /** True if you can still rate (picked up, not rated). */
+  canRate: boolean;
 }
+export interface PayoutSummary {
+  collectedCents: number;
+  releasedCents: number;
+  heldCents: number;
+  releases: {
+    kind: "shopping" | "fees";
+    amountCents: number;
+    createdAt: string;
+  }[];
+}
+export interface ShoppingProof {
+  receiptPhoto: string;
+  itemsPhoto: string;
+  receiptTotalCents: number;
+  uploadedAt: string;
+}
+export const photoData = z
+  .string()
+  .regex(
+    /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/,
+    "Choose a PNG, JPEG or WebP photo.",
+  )
+  .max(1_400_000, "That photo is too large. Choose a smaller one.");
+export const proofInput = z.object({
+  receiptPhoto: photoData,
+  itemsPhoto: photoData,
+  receiptTotalCents: z
+    .number()
+    .int()
+    .min(1, "Enter the receipt total.")
+    .max(1_000_000),
+});
+export const ratingInput = z.object({
+  stars: z.number().int().min(1, "Choose 1 to 5 stars.").max(5),
+  comment: z.string().trim().max(280).default(""),
+});
 export interface ProductRequest {
   id: string;
   name: string;
@@ -730,3 +822,71 @@ export const claimText = (
   i.unit && i.shareUnits
     ? `${quantity} share${quantity === 1 ? "" : "s"} = ${plural(quantity * i.shareUnits, i.unit)}`
     : `${quantity} share${quantity === 1 ? "" : "s"} × ${i.shareLabel}`;
+
+const emailField = z
+  .email({ error: "Enter a valid email address, like name@example.com." })
+  .max(254)
+  .transform((s) => s.toLowerCase());
+export const forgotPasswordInput = z.object({ email: emailField });
+export const resetPasswordInput = z.object({
+  email: emailField,
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, "Enter the six-digit code from your email."),
+  password: z
+    .string({ error: "Enter a password with at least 8 characters." })
+    .min(8, "Your password must be at least 8 characters long.")
+    .max(128, "Your password must be 128 characters or fewer."),
+  native: z.boolean().optional(),
+});
+
+/** A list of things buyers want, waiting for someone to organize it. */
+export interface Wishlist {
+  id: string;
+  title: string;
+  store: string;
+  pickupLocation: string;
+  note: string;
+  status: "open" | "claimed" | "closed";
+  creatorName: string;
+  mine: boolean;
+  joined: boolean;
+  memberCount: number;
+  /** Group made from this wishlist, once someone organizes it. */
+  orderId: string | null;
+  organizerName: string | null;
+  items: WishlistItem[];
+  createdAt: string;
+}
+export interface WishlistItem {
+  id: string;
+  name: string;
+  catalogKey: string | null;
+  wants: number;
+  wanted: boolean;
+}
+const wishItemInput = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "Name the item.")
+    .max(120, "Keep item names under 120 characters."),
+  catalogKey: z.string().max(40).nullable().default(null),
+});
+export const wishlistInput = z.object({
+  title: z
+    .string({ error: "Give the wishlist a name." })
+    .trim()
+    .min(1, "Give the wishlist a name.")
+    .max(80, "Keep the name under 80 characters."),
+  store: z.string().trim().min(1, "Choose a store.").max(80),
+  pickupLocation: z.string().trim().min(1, "Choose a pickup place.").max(160),
+  note: z.string().trim().max(280).default(""),
+  items: z
+    .array(wishItemInput)
+    .min(1, "Add at least one item.")
+    .max(30, "Up to 30 items."),
+});
+export type WishlistInput = z.infer<typeof wishlistInput>;
+export const wishlistItemInput = wishItemInput;

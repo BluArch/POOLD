@@ -1,16 +1,19 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { View, Text, Linking, Platform, Pressable, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { View, Text, Linking } from "react-native";
+import { router } from "expo-router";
 import {
   type OrderView,
   type Item,
   type ProductRequest,
   money,
   describeShare,
+  feeFor,
 } from "@poold/contracts";
 import { api, post } from "../api";
 import {
   Button,
+  Field,
   Check,
   styles,
   ErrorText,
@@ -28,8 +31,8 @@ import {
   ReceiptPanel,
   ReceiptLine,
 } from "./Receipt";
-import { Zigzag, Chip, ChipRow } from "./Market";
-import { palette as P, type } from "../theme";
+import { Badge, Chip, ChipRow } from "./Market";
+import { palette as P, type, brand } from "../theme";
 
 /** What a buyer sees: available items first, then their own shares, then pickup. */
 export function MemberView({
@@ -50,49 +53,19 @@ export function MemberView({
     <>
       {canChange && (
         <>
-          <Text style={styles.h2}>Pick from the stall</Text>
+          <Text style={styles.h2}>Choose your shares</Text>
           {full ? (
             <View style={styles.note}>
-              <Text style={styles.text}>
-                Every spot in this group is taken. Check Discover for another
-                group.
-              </Text>
+              <Text style={styles.text}>This group is full.</Text>
             </View>
           ) : (
             <ShareChooser view={v} invite={invite} onSaved={refresh} />
           )}
         </>
       )}
-      {!canChange && hasShares && (
-        <View>
-          <View style={styles.section}>
-            <Text style={styles.h2}>Your shares</Text>
-            {v.myClaims.map((c) => (
-              <ReceiptLine
-                key={c.itemId}
-                name={`${c.name} ×${c.quantity}`}
-                category={v.items.find((i) => i.id === c.itemId)?.category}
-                cost={c.available ? money(c.estimateCents) : "Unavailable"}
-              />
-            ))}
-            <View style={styles.between}>
-              <Text style={type.mono}>EST. TOTAL</Text>
-              <Text style={type.total}>{money(v.myEstimateCents)}</Text>
-            </View>
-            <Text style={styles.muted}>
-              Shares are locked. Contact the organizer for changes.
-            </Text>
-          </View>
-          <Zigzag />
-        </View>
-      )}
-
       {!canChange && o.status === "open" && (
         <View style={styles.note}>
-          <Text style={styles.text}>
-            Shares closed {when(o.deadline)}, and the organizer is preparing the
-            shopping list.
-          </Text>
+          <Text style={styles.text}>Shares closed {when(o.deadline)}.</Text>
         </View>
       )}
 
@@ -102,27 +75,258 @@ export function MemberView({
 
       {!canChange && !hasShares && <ItemsReadOnly items={v.items} />}
 
-      {(hasShares || !canChange) && (
-        <PickupDetails view={v} refresh={refresh} />
-      )}
+      {hasShares && !v.mine?.noShowAt && <PayShare view={v} />}
 
-      <Collapsible
-        title="About this group"
-        summary={`Organized by ${o.organizerName} · ${o.memberCount} of ${o.maxMembers} joined`}
-      >
-        <Text style={styles.text}>
-          {o.store} run organized by {o.organizerName}
-        </Text>
-        <Text style={styles.muted}>
-          Shares close {when(o.deadline)} · Pickup {when(o.pickupAt)} –{" "}
-          {when(o.pickupEnd)} at {o.pickupLocation}.
-        </Text>
-        <Text style={styles.muted}>
-          Prices are product estimates in CAD. No payment is handled in the app.
-        </Text>
-        <DirectionsButton order={o} />
-      </Collapsible>
+      {v.proof && <ProofCard view={v} />}
+
+      {v.mine?.noShowAt ? (
+        <MissedPickup view={v} />
+      ) : v.mine?.collectedAt ? (
+        <>
+          <PickedUp view={v} />
+          {(v.canRate || v.myRating !== null) && (
+            <RateOrganizer view={v} refresh={refresh} />
+          )}
+        </>
+      ) : (
+        (hasShares || !canChange) && (
+          <PickupDetails view={v} refresh={refresh} />
+        )
+      )}
     </>
+  );
+}
+
+/** Shown once the organizer confirms the buyer's pickup code. */
+function PickedUp({ view: v }: { view: OrderView }) {
+  const o = v.order,
+    m = v.mine!;
+  return (
+    <View
+      style={[
+        styles.card,
+        {
+          alignItems: "center",
+          gap: 10,
+          paddingVertical: 26,
+          backgroundColor: brand.greenSoft,
+        },
+      ]}
+    >
+      <View
+        style={{
+          width: 72,
+          height: 72,
+          borderRadius: 36,
+          backgroundColor: brand.greenDark,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Ionicons name="checkmark" size={42} color={P.white} />
+      </View>
+      <Text style={[type.title, { textAlign: "center" }]}>
+        {o.status === "completed" ? "All done!" : "Picked up!"}
+      </Text>
+      <Text style={[styles.text, { textAlign: "center" }]}>
+        {o.organizerName.split(" ")[0]} confirmed your pickup code (
+        {when(m.collectedAt!)}). Enjoy your groceries!
+      </Text>
+      <View style={{ alignSelf: "stretch", gap: 8, marginTop: 6 }}>
+        {v.myClaims
+          .filter((c) => c.available)
+          .map((c) => (
+            <ReceiptLine
+              key={c.itemId}
+              name={`${c.name} ×${c.quantity}`}
+              category={v.items.find((i) => i.id === c.itemId)?.category}
+              cost={money(c.estimateCents)}
+            />
+          ))}
+        {!v.isOrganizer && (
+          <View style={styles.between}>
+            <Text style={type.mono}>Paid</Text>
+            <Text style={type.label}>{money(m.paidCents)}</Text>
+          </View>
+        )}
+      </View>
+      {o.status === "completed" && <Badge tone="good">Group complete</Badge>}
+    </View>
+  );
+}
+
+/** Buyers rate the organizer once they have their bag. */
+function RateOrganizer({
+  view: v,
+  refresh,
+}: {
+  view: OrderView;
+  refresh: () => Promise<void>;
+}) {
+  const a = useAction();
+  const [stars, setStars] = useState(v.myRating ?? 0),
+    [comment, setComment] = useState("");
+  const first = v.order.organizerName.split(" ")[0];
+  if (v.myRating !== null)
+    return (
+      <View style={[styles.card, styles.row]}>
+        <Text style={[styles.text, { flex: 1 }]}>You rated {first}</Text>
+        <Stars value={v.myRating} />
+      </View>
+    );
+  return (
+    <View style={[styles.card, { gap: 12, alignItems: "center" }]}>
+      <Text style={styles.h2}>How was {first} as an organizer?</Text>
+      <Stars value={stars} onChange={setStars} size={34} />
+      <View style={{ alignSelf: "stretch" }}>
+        <Field
+          label="Anything to add? (optional)"
+          value={comment}
+          onChangeText={setComment}
+          placeholder="On time, well packed…"
+        />
+      </View>
+      <ErrorText message={a.error} />
+      <View style={{ alignSelf: "stretch" }}>
+        <Button
+          disabled={a.busy || stars === 0}
+          onPress={() =>
+            void a.run(async () => {
+              await post(`/orders/${v.order.id}/rating`, { stars, comment });
+              await refresh();
+            })
+          }
+        >
+          {stars ? `Send ${stars}-star rating` : "Tap a star to rate"}
+        </Button>
+      </View>
+    </View>
+  );
+}
+
+/** Star row; tappable when onChange is given. */
+export function Stars({
+  value,
+  onChange,
+  size = 18,
+}: {
+  value: number;
+  onChange?: (n: number) => void;
+  size?: number;
+}) {
+  return (
+    <View style={[styles.row, { gap: size > 20 ? 8 : 2 }]}>
+      {[1, 2, 3, 4, 5].map((n) => {
+        const icon = (
+          <Ionicons
+            name={n <= Math.round(value) ? "star" : "star-outline"}
+            size={size}
+            color={n <= Math.round(value) ? "#E8A317" : P.lineStrong}
+          />
+        );
+        return onChange ? (
+          <Pressable
+            key={n}
+            accessibilityRole="button"
+            accessibilityLabel={`${n} star${n === 1 ? "" : "s"}`}
+            accessibilityState={{ selected: n <= value }}
+            onPress={() => onChange(n)}
+            hitSlop={4}
+          >
+            {icon}
+          </Pressable>
+        ) : (
+          <View key={n}>{icon}</View>
+        );
+      })}
+    </View>
+  );
+}
+
+/** Receipt and items photo the organizer uploaded after shopping. */
+function ProofCard({ view: v }: { view: OrderView }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const p = v.proof!;
+  return (
+    <View style={[styles.card, { gap: 10 }]}>
+      <View style={styles.between}>
+        <Text style={styles.h2}>Proof of purchase</Text>
+        <Badge tone="good">{`Receipt ${money(p.receiptTotalCents)}`}</Badge>
+      </View>
+      <Text style={type.mono}>
+        Uploaded by {v.order.organizerName.split(" ")[0]} {when(p.uploadedAt)}
+      </Text>
+      <View style={[styles.row, { gap: 10 }]}>
+        {[
+          ["Receipt", p.receiptPhoto],
+          ["Items", p.itemsPhoto],
+        ].map(([label, uri]) => (
+          <Pressable
+            key={label}
+            accessibilityRole="button"
+            accessibilityLabel={`View ${label.toLowerCase()} photo`}
+            onPress={() => setOpen(open === uri ? null : uri)}
+            style={{ flex: 1, gap: 4 }}
+          >
+            <Image
+              source={{ uri }}
+              style={{
+                width: "100%",
+                height: 110,
+                borderRadius: 12,
+                backgroundColor: P.track,
+              }}
+              resizeMode="cover"
+            />
+            <Text style={[type.mono, { textAlign: "center" }]}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      {open && (
+        <Pressable onPress={() => setOpen(null)}>
+          <Image
+            source={{ uri: open }}
+            style={{
+              width: "100%",
+              height: 420,
+              borderRadius: 12,
+              backgroundColor: P.track,
+            }}
+            resizeMode="contain"
+          />
+          <Text style={[type.mono, { textAlign: "center" }]}>Tap to close</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+/** The buyer missed pickup and the 24-hour hold ended. */
+function MissedPickup({ view: v }: { view: OrderView }) {
+  return (
+    <View
+      style={[
+        styles.card,
+        { gap: 8, borderWidth: 1.5, borderColor: "#E7B8B3" },
+      ]}
+    >
+      <View style={styles.row}>
+        <Ionicons name="alert-circle" size={24} color={P.beet} />
+        <Text style={[styles.h2, { flex: 1 }]}>You missed pickup</Text>
+      </View>
+      <Text style={styles.text}>
+        The 24-hour hold ended {when(v.mine!.noShowAt!)}. Your bag and payment
+        went to {v.order.organizerName.split(" ")[0]}, and a no-show was added
+        to your account.
+      </Text>
+      <Text
+        accessibilityRole="link"
+        onPress={() => router.push("/policies")}
+        style={[type.label, { color: P.carrot }]}
+      >
+        Read the no-show policy
+      </Text>
+    </View>
   );
 }
 
@@ -141,17 +345,13 @@ function GroupRequests({
   const open = r.data?.filter((q) => q.status === "open").length ?? 0;
   return (
     <Collapsible
-      title="Suggest a product"
+      title="Want something else?"
       summary={
         open
-          ? `${open} request${open === 1 ? "" : "s"} waiting for the organizer`
-          : "Ask the organizer to add an item to this group"
+          ? `${open} request${open === 1 ? "" : "s"} sent`
+          : "Ask the organizer to add an item"
       }
     >
-      <Text style={styles.muted}>
-        The organizer decides whether to add it. You’ll get an update either
-        way.
-      </Text>
       <RequestForm
         path={`/orders/${v.order.id}/requests${suffix}`}
         onDone={r.refresh}
@@ -211,6 +411,9 @@ function ShareChooser({
   const total = selected.reduce((n, i) => n + estimateFor(i, qty[i.id]), 0);
   const changed = v.items.some((i) => (qty[i.id] ?? 0) !== i.mine);
   const releasing = selected.length === 0;
+  const paid = v.mine?.paidCents ?? 0;
+  const fee = feeFor(total, v.isOrganizer);
+  const toPay = Math.max(0, total + fee - paid);
   const suffix = invite ? `?invite=${encodeURIComponent(invite)}` : "";
 
   const save = () =>
@@ -227,6 +430,12 @@ function ShareChooser({
         }),
       });
       await onSaved();
+      // Pay right away so the organizer has the money before shopping.
+      if (toPay > 0)
+        router.push({
+          pathname: "/(tabs)/pay/[id]",
+          params: { id: v.order.id },
+        });
     });
 
   return (
@@ -258,6 +467,7 @@ function ShareChooser({
           items={selected}
           quantity={(id) => qty[id] ?? 0}
           total={total}
+          fee={fee}
           organizer={v.order.organizerName}
           action={
             <Button
@@ -276,20 +486,16 @@ function ShareChooser({
                   ? v.myClaims.length
                     ? "Release all my shares"
                     : "Choose at least one share"
-                  : v.myClaims.length
-                    ? "Save changes"
-                    : "Confirm shares"}
+                  : toPay > 0
+                    ? `Confirm & pay ${money(toPay)}`
+                    : v.myClaims.length
+                      ? "Save changes"
+                      : "Confirm shares"}
             </Button>
           }
         >
           {!releasing && (
-            <View
-              style={{
-                backgroundColor: P.paper,
-                borderRadius: 8,
-                paddingHorizontal: 10,
-              }}
-            >
+            <View>
               <Check
                 label="I can attend this pickup time"
                 value={attending}
@@ -318,6 +524,7 @@ export function DirectionsButton({ order: o }: { order: OrderView["order"] }) {
     <>
       <Button
         secondary
+        icon="navigate-outline"
         onPress={() =>
           void a.run(async () => {
             const destination =
@@ -330,7 +537,7 @@ export function DirectionsButton({ order: o }: { order: OrderView["order"] }) {
           })
         }
       >
-        {`Walking directions to ${o.pickupLocation}`}
+        Directions
       </Button>
       <ErrorText message={a.error} />
     </>
@@ -348,132 +555,75 @@ export function PickupDetails({
     m = v.mine,
     o = v.order;
   const needsPickup = !!m?.claims.some((c) => c.available);
-  const days = Math.ceil((Date.parse(o.pickupAt) - Date.now()) / 86400000);
   return (
     <>
-      <View>
-        <Zigzag top />
-        <View style={[styles.section, { borderRadius: 0, gap: 16 }]}>
-          {m && !needsPickup ? (
-            <Text style={styles.h3}>You have nothing to collect.</Text>
-          ) : m?.collectedAt ? (
-            <Text style={styles.h3}>Collected · {when(m.collectedAt)}</Text>
-          ) : (
-            <>
-              <Text style={type.mono}>
-                SHOW THIS CODE TO {o.organizerName.toUpperCase()}
-              </Text>
-              {v.collectionCode ? (
-                <Text
-                  selectable
-                  style={{
-                    ...type.total,
-                    fontFamily: "DMMono_500Medium",
-                    fontSize: 36,
-                    lineHeight: 46,
-                    letterSpacing: 1,
-                  }}
-                >
-                  {v.collectionCode.match(/.{1,4}/g)?.join(" ")}
-                </Text>
-              ) : (
-                <Text style={styles.muted}>
-                  {o.status === "shopping"
-                    ? "The organizer is shopping."
-                    : "Your share will be ready after shopping."}
-                </Text>
-              )}
-              {v.collectionCode && (
-                <Text style={styles.muted}>
-                  Show this to your organizer when you collect your bag.
-                </Text>
-              )}
-            </>
-          )}
+      <View style={[styles.card, { gap: 14 }]}>
+        <Text style={styles.h2}>Pickup</Text>
+        {m && !needsPickup ? (
+          <Text style={styles.muted}>Nothing to collect.</Text>
+        ) : m?.collectedAt ? (
+          <Badge tone="good">{`Collected ${when(m.collectedAt)}`}</Badge>
+        ) : v.collectionCode ? (
+          <View
+            style={{
+              backgroundColor: brand.yellow,
+              borderRadius: 16,
+              padding: 16,
+              gap: 4,
+              alignItems: "center",
+            }}
+          >
+            <Text style={[type.mono, { color: P.ink }]}>
+              Show this code to {o.organizerName.split(" ")[0]}
+            </Text>
+            <Text
+              selectable
+              style={{
+                ...type.total,
+                fontSize: 30,
+                lineHeight: 38,
+                letterSpacing: 2,
+                textAlign: "center",
+              }}
+            >
+              {v.collectionCode.match(/.{1,4}/g)?.join(" ")}
+            </Text>
+          </View>
+        ) : (
+          <Text style={styles.muted}>
+            {o.status === "shopping"
+              ? "The organizer is shopping now."
+              : "Your pickup code appears after shopping."}
+          </Text>
+        )}
+        {!!v.myClaims.length && (
           <View
             style={{
               borderTopWidth: 1,
-              borderStyle: "dashed",
               borderColor: P.line,
-              paddingTop: 16,
-              gap: 16,
+              paddingTop: 14,
+              gap: 10,
             }}
           >
-            <View style={styles.row}>
-              <View
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 11,
-                  backgroundColor: P.track,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Ionicons name="location-outline" size={24} color={P.chalk} />
-              </View>
-              <View style={{ flex: 1, gap: 4 }}>
-                <Text style={type.mono}>PICKUP PLACE</Text>
-                <Text style={styles.text}>{o.pickupLocation}</Text>
-              </View>
-            </View>
-            <View style={styles.row}>
-              <View
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 11,
-                  backgroundColor: P.track,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Ionicons name="time-outline" size={24} color={P.chalk} />
-              </View>
-              <View style={{ flex: 1, gap: 4 }}>
-                <Text style={styles.text}>
-                  {when(o.pickupAt)} – {when(o.pickupEnd)}
-                </Text>
-                <Text style={type.mono}>
-                  {days > 0
-                    ? `IN ${days} ${days === 1 ? "DAY" : "DAYS"}`
-                    : days === 0
-                      ? "PICKUP DAY"
-                      : "PICKUP TIME PASSED"}
-                </Text>
-              </View>
+            <Text style={styles.label}>In your bag</Text>
+            {v.myClaims.map((c) => (
+              <ReceiptLine
+                key={c.itemId}
+                name={`${c.name} ×${c.quantity}`}
+                category={v.items.find((i) => i.id === c.itemId)?.category}
+                cost={c.available ? money(c.estimateCents) : "Unavailable"}
+              />
+            ))}
+            <View style={styles.between}>
+              <Text style={type.mono}>Estimated total</Text>
+              <Text style={type.total}>{money(v.myEstimateCents)}</Text>
             </View>
           </View>
-          {!!v.myClaims.length && (
-            <View
-              style={{
-                borderTopWidth: 1,
-                borderStyle: "dashed",
-                borderColor: P.line,
-                paddingTop: 16,
-                gap: 12,
-              }}
-            >
-              <Text style={styles.h2}>In your bag</Text>
-              {v.myClaims.map((c) => (
-                <ReceiptLine
-                  key={c.itemId}
-                  name={`${c.name} ×${c.quantity}`}
-                  category={v.items.find((i) => i.id === c.itemId)?.category}
-                  cost={c.available ? money(c.estimateCents) : "Unavailable"}
-                />
-              ))}
-              <View style={styles.between}>
-                <Text style={type.mono}>EST. TOTAL</Text>
-                <Text style={type.total}>{money(v.myEstimateCents)}</Text>
-              </View>
-            </View>
-          )}
-        </View>
-        <Zigzag />
+        )}
       </View>
       {m && needsPickup && !m.collectedAt && o.status === "ready" && (
         <Button
+          icon="hand-left-outline"
           disabled={a.busy || m.arrived}
           onPress={() =>
             void a.run(async () => {
@@ -482,13 +632,103 @@ export function PickupDetails({
             })
           }
         >
-          {m.arrived
-            ? "Organizer notified you arrived"
-            : "I’m at the pickup place"}
+          {m.arrived ? "Organizer knows you’re here" : "I’m here"}
         </Button>
       )}
       <DirectionsButton order={o} />
       <ErrorText message={a.error} />
     </>
+  );
+}
+
+/**
+ * Payment status for your shares. Buyers pay when they confirm shares, so the
+ * organizer has the money before shopping. Always test mode.
+ */
+function PayShare({ view: v }: { view: OrderView }) {
+  const a = useAction();
+  const m = v.mine,
+    o = v.order;
+  if (!m) return null;
+  const refunds = m.payments.filter((p) => p.kind === "refund");
+  const lastCard = m.payments.find((p) => p.kind === "payment" && p.cardLast4);
+  // Stripe test key on the server → Stripe's hosted test checkout.
+  // Otherwise → POOLD's own test checkout.
+  const start = () =>
+    a.run(async () => {
+      if (v.payments !== "stripe_test") {
+        router.push({ pathname: "/(tabs)/pay/[id]", params: { id: o.id } });
+        return;
+      }
+      const r = await post<{ url?: string }>(`/orders/${o.id}/pay`);
+      if (!r.url)
+        throw new Error("Stripe test checkout didn’t open. Try again.");
+      if (Platform.OS === "web") window.location.assign(r.url);
+      else await Linking.openURL(r.url);
+    });
+  if (m.dueCents > 0 && !["cancelled"].includes(o.status))
+    return (
+      <View
+        style={[
+          styles.card,
+          { gap: 10, borderWidth: 2, borderColor: brand.orange },
+        ]}
+      >
+        <View style={styles.between}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.h2}>
+              {m.paidCents > 0 ? "Balance to pay" : "Payment needed"}
+            </Text>
+            <Text style={type.mono}>
+              {m.paidCents > 0
+                ? "A price went up or you added shares."
+                : `Pay now so ${o.organizerName.split(" ")[0]} can shop for you.`}
+            </Text>
+          </View>
+          <Text style={type.total}>{money(m.dueCents)}</Text>
+        </View>
+        <Button
+          icon="card-outline"
+          disabled={a.busy}
+          onPress={() => void start()}
+        >
+          {`Pay ${money(m.dueCents)}`}
+        </Button>
+        <Text style={[type.mono, { textAlign: "center" }]}>
+          Test mode: no real money is charged.
+        </Text>
+        <ErrorText message={a.error} />
+      </View>
+    );
+  if (m.paidCents <= 0 && !refunds.length) return null;
+  return (
+    <View style={[styles.card, { gap: 8 }]}>
+      <View style={styles.row}>
+        <Ionicons name="checkmark-circle" size={24} color={brand.greenDark} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.label}>
+            {m.paidCents > 0 ? `Paid ${money(m.paidCents)}` : "Fully refunded"}
+          </Text>
+          <Text style={type.mono}>
+            {lastCard
+              ? `${lastCard.cardBrand ?? "Card"} •••• ${lastCard.cardLast4}`
+              : "Card"}{" "}
+            · test payment
+          </Text>
+        </View>
+        <Badge tone="good">Paid</Badge>
+      </View>
+      {refunds.map((r) => (
+        <View key={r.id} style={styles.between}>
+          <Text style={[type.mono, { flex: 1 }]}>
+            Refunded {when(r.createdAt)}
+            {r.note ? ` · ${r.note}` : ""}
+          </Text>
+          <Text style={[type.label, { color: brand.greenDeep }]}>
+            +{money(r.amountCents)}
+          </Text>
+        </View>
+      ))}
+    </View>
   );
 }
