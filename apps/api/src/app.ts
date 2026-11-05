@@ -11,9 +11,25 @@ import { auth } from "./auth.js";
 import { mailer, type MailSender } from "./mail.js";
 import { communication } from "./communication.js";
 import { fulfillment } from "./fulfillment.js";
+import { payments, stripeKey } from "./payments.js";
 import { claims } from "./claims.js";
 import { orders } from "./orders.js";
 import { errorHandler, RATE_LIMIT_ERROR } from "./errors.js";
+/**
+ * When the API also serves the web app (hosting, or the phone demo link), the
+ * page and the API share one address. Requests from that same address are
+ * allowed even if APP_ORIGIN names a different one.
+ */
+function sameHost(requestOrigin: string, req: express.Request) {
+  try {
+    const host = new URL(requestOrigin).host;
+    return [req.get("x-forwarded-host"), req.get("host")].some(
+      (h) => !!h && h.split(",")[0].trim() === host,
+    );
+  } catch {
+    return false;
+  }
+}
 export function createApp(
   db: Pool,
   options: {
@@ -33,6 +49,7 @@ export function createApp(
     process.env.RENDER_EXTERNAL_URL ??
     "http://localhost:8081";
   const sendMail = options.sendMail ?? mailer(production);
+  stripeKey(); // Refuses to start with a live Stripe key.
   const app = express();
   app.disable("x-powered-by");
   if (process.env.TRUST_PROXY_HOPS) {
@@ -48,7 +65,8 @@ export function createApp(
     if (
       !["GET", "HEAD", "OPTIONS"].includes(req.method) &&
       req.headers.origin &&
-      req.headers.origin !== origin
+      req.headers.origin !== origin &&
+      !sameHost(req.headers.origin, req)
     ) {
       res.status(403).json({
         error: { code: "ORIGIN", message: "Request origin is not allowed." },
@@ -103,6 +121,13 @@ export function createApp(
     communication(db, sendMail, process.env.PUBLIC_APP_URL ?? origin),
   );
   app.use("/api", fulfillment(db));
+  app.use(
+    "/api",
+    payments(
+      db,
+      process.env.PUBLIC_APP_URL ?? process.env.RENDER_EXTERNAL_URL ?? origin,
+    ),
+  );
   app.use("/api", claims(db));
   app.use("/api", orders(db));
   if (demo)

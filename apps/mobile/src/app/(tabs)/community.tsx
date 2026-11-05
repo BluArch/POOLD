@@ -10,12 +10,58 @@ import {
   styles,
   useResource,
   ResourceState,
+  EmptyState,
 } from "../../components/ui";
 import { OrderRow } from "../../components/OrderRow";
 import { Chip, ChipRow } from "../../components/Market";
 import { Sheet } from "../../components/Sheet";
 import { Select, DateTimeField } from "../../components/Pickers";
 import { useSession } from "../../session";
+import { useRole } from "../../role";
+import { Ionicons } from "@expo/vector-icons";
+import { type as T, brand } from "../../theme";
+
+export function SectionTitle({ children }: { children: string }) {
+  return (
+    <Text style={[T.section, { marginBottom: 10 }]} accessibilityRole="header">
+      {children}
+    </Text>
+  );
+}
+
+const HOW = [
+  { icon: "people-outline", text: "Join a group going to Costco" },
+  { icon: "pie-chart-outline", text: "Take only the share you need" },
+  { icon: "bag-check-outline", text: "Pick it up on campus" },
+] as const;
+
+/** Short starting point for people who haven't joined anything yet. */
+function HowItWorks() {
+  return (
+    <View style={[styles.card, { backgroundColor: brand.yellowSoft }]}>
+      <Text style={styles.h3}>How it works</Text>
+      {HOW.map((step, n) => (
+        <View key={step.text} style={styles.row}>
+          <View
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 16,
+              backgroundColor: P.paper,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Ionicons name={step.icon} size={17} color={P.ink} />
+          </View>
+          <Text style={[styles.text, { flex: 1 }]}>
+            {n + 1}. {step.text}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
 
 type Frame = "all" | "soon";
 type Day = "any" | "today" | "tomorrow" | "pick";
@@ -25,7 +71,8 @@ const ymd = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 export default function Community() {
-  const s = useSession();
+  const s = useSession(),
+    role = useRole();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [frame, setFrame] = useState<Frame>("all"),
     [store, setStore] = useState(ANY_STORE),
@@ -49,7 +96,6 @@ export default function Community() {
     frame !== "all";
 
   const all = r.data ?? [];
-  const mineOrganizing = all.filter((o) => o.organizerId === s.user?.id);
   const others = all.filter((o) => o.organizerId !== s.user?.id);
   const inFrame = others.filter(
     (o) =>
@@ -64,8 +110,9 @@ export default function Community() {
 
   return (
     <Screen
-      title="Discover"
-      subtitle={`${new Date().toLocaleDateString("en-CA", { weekday: "short", month: "short", day: "2-digit" })} · ${all.length} groups open near UVic`}
+      title="Find a group"
+      subtitle={`${others.length} open near UVic`}
+      roleSwitch
       onRefresh={() => void r.refresh()}
       refreshing={r.loading}
       header={
@@ -100,7 +147,7 @@ export default function Community() {
           ))}
           <Chip
             dark
-            label={`More filters${place !== ANY_PLACE || day !== "any" ? " · On" : ""}`}
+            label={`Filters${place !== ANY_PLACE || day !== "any" ? " · On" : ""}`}
             onPress={() => setFiltersOpen(true)}
           />
         </ChipRow>
@@ -166,9 +213,10 @@ export default function Community() {
       </Sheet>
 
       <ResourceState resource={r} />
+      {r.data && joined.length === 0 && !filtered && <HowItWorks />}
       {joined.length > 0 && (
         <View>
-          <Text style={[styles.h2, { marginBottom: 12 }]}>You’re in</Text>
+          <SectionTitle>You’re in</SectionTitle>
           {joined.map((o) => (
             <OrderRow key={o.id} order={o} />
           ))}
@@ -176,39 +224,56 @@ export default function Community() {
       )}
       {r.data && (
         <View>
-          <Text style={[styles.h2, { marginBottom: 12 }]}>Open to join</Text>
+          <SectionTitle>Open groups</SectionTitle>
           {open.map((o) => (
             <OrderRow key={o.id} order={o} />
           ))}
           {open.length === 0 && (
-            <View style={[styles.note, { marginTop: 10 }]}>
-              <Text style={styles.h3}>
-                {filtered ? "No groups match." : "No open groups right now."}
-              </Text>
-              <Text style={styles.muted}>
-                {filtered
+            <EmptyState
+              icon="search-outline"
+              title={filtered ? "No groups match" : "No open groups yet"}
+              message={
+                filtered
                   ? "Try clearing a filter."
-                  : "Start a group from Start. You can suggest products inside an open group."}
-              </Text>
-            </View>
+                  : "Check back soon, or start one yourself."
+              }
+            >
+              {filtered ? (
+                <Button
+                  secondary
+                  onPress={() => {
+                    setStore(ANY_STORE);
+                    setPlace(ANY_PLACE);
+                    setDay("any");
+                    setFrame("all");
+                  }}
+                >
+                  Clear filters
+                </Button>
+              ) : (
+                <Button
+                  secondary
+                  onPress={() => {
+                    role.setRole("organizing");
+                    router.navigate("/(tabs)/create");
+                  }}
+                >
+                  Organize a group
+                </Button>
+              )}
+            </EmptyState>
           )}
         </View>
       )}
-      {mineOrganizing.length > 0 && (
-        <Pressable
-          accessibilityRole="link"
-          onPress={() => router.push("/(tabs)/organize")}
-          style={styles.note}
-        >
-          <Text style={styles.text}>
-            Your own {mineOrganizing.length} group
-            {mineOrganizing.length === 1 ? " is" : "s are"} in My groups.
-          </Text>
-          <Text style={[styles.muted, { color: P.herbText }]}>
-            Go to My groups →
-          </Text>
-        </Pressable>
-      )}
+      <Pressable
+        accessibilityRole="link"
+        onPress={() => router.push("/(tabs)/invite")}
+        style={[styles.section, styles.row]}
+      >
+        <Ionicons name="key-outline" size={20} color={P.ink} />
+        <Text style={[styles.label, { flex: 1 }]}>Have an invite link?</Text>
+        <Ionicons name="chevron-forward" size={18} color={P.muted} />
+      </Pressable>
     </Screen>
   );
 }

@@ -25,7 +25,8 @@ import {
 } from "./ui";
 import { ItemIcon } from "./ItemIcon";
 import { ReceiptLine } from "./Receipt";
-import { palette as P, type } from "../theme";
+import { palette as P, type, brand } from "../theme";
+import { Badge } from "./Market";
 import { RequestCard } from "./RequestList";
 import { DirectionsButton } from "./MemberView";
 import {
@@ -80,10 +81,8 @@ export function OrganizerView({
     return (
       <>
         <View style={styles.note}>
-          <Text style={styles.h3}>This order was cancelled.</Text>
-          <Text style={styles.muted}>
-            Members were notified. You can start again from a new draft.
-          </Text>
+          <Text style={styles.h3}>This group was cancelled.</Text>
+          <Text style={styles.muted}>Members were notified.</Text>
         </View>
         <MoreOptions view={v} refresh={refresh} />
       </>
@@ -191,12 +190,10 @@ function CollectStep({
       <StepHeader
         title="Collecting shares"
         detail={
-          readOnly
-            ? "Shares are closed. This is what members committed."
-            : `Members can join and change shares until ${when(o.deadline)}`
+          readOnly ? "Shares are closed." : `Open until ${when(o.deadline)}`
         }
       />
-      <View style={styles.note}>
+      <View style={styles.card}>
         <View style={styles.between}>
           <Text style={styles.text}>Members joined</Text>
           <Text style={styles.h3}>
@@ -205,29 +202,32 @@ function CollectStep({
         </View>
         <ProgressBar value={o.memberCount} total={o.maxMembers} />
       </View>
-      {v.items.map((i) => {
-        const capacity = i.packCount * i.sharesPerPack;
-        return (
-          <View key={i.id} style={{ gap: 6 }}>
-            <View style={styles.between}>
-              <ItemIcon item={i} size={26} />
-              <Text style={[styles.h3, { flex: 1 }]}>{i.name}</Text>
-              <Text style={styles.text}>
-                {i.claimed} / {capacity} shares
+      <View style={[styles.card, { gap: 16 }]}>
+        <Text style={styles.label}>Shares claimed</Text>
+        {v.items.map((i) => {
+          const capacity = i.packCount * i.sharesPerPack;
+          return (
+            <View key={i.id} style={{ gap: 6 }}>
+              <View style={styles.between}>
+                <ItemIcon item={i} size={26} />
+                <Text style={[styles.h3, { flex: 1 }]}>{i.name}</Text>
+                <Text style={styles.text}>
+                  {i.claimed} / {capacity} shares
+                </Text>
+              </View>
+              <Text style={styles.muted}>{describeShare(i).share}</Text>
+              <ProgressBar value={i.claimed} total={capacity} />
+              <Text style={styles.muted}>
+                {i.claimed === 0
+                  ? "No shares yet."
+                  : i.shortfall > 0
+                    ? `${i.shortfall} more to fill the last pack`
+                    : "Packs full"}
               </Text>
             </View>
-            <Text style={styles.muted}>{describeShare(i).share}</Text>
-            <ProgressBar value={i.claimed} total={capacity} />
-            <Text style={styles.muted}>
-              {i.claimed === 0
-                ? "No shares yet."
-                : i.shortfall > 0
-                  ? `${i.shortfall} more share${i.shortfall === 1 ? "" : "s"} would fill the last pack.`
-                  : "Every pack needed so far is full."}
-            </Text>
-          </View>
-        );
-      })}
+          );
+        })}
+      </View>
       <Collapsible
         title="Who’s in"
         summary={`${v.members.length} member${v.members.length === 1 ? "" : "s"}`}
@@ -257,14 +257,12 @@ function CollectStep({
         <Advance
           view={v}
           to="locked"
-          label="Close shares and make the shopping list"
-          warning="Members won’t be able to change or release shares after this."
+          label="Close shares"
+          warning="Members can’t change their shares after this. You’ll get the shopping list."
           refresh={refresh}
           disabled={claimedTotal === 0}
           blocker={
-            claimedTotal === 0
-              ? "You can close shares once someone has claimed one."
-              : undefined
+            claimedTotal === 0 ? "Waiting for the first share." : undefined
           }
         />
       )}
@@ -306,9 +304,7 @@ function AddItems({
         onToggle={setRequestsOpen}
       >
         {r.data?.length === 0 && (
-          <Text style={styles.muted}>
-            Members can ask you to add items while shares are open.
-          </Text>
+          <Text style={styles.muted}>No requests yet.</Text>
         )}
         {[...waiting, ...answered].map((q) => (
           <RequestCard
@@ -448,7 +444,7 @@ function InviteTools({ view: v }: { view: OrderView }) {
     queryParams: { invite: v.inviteToken },
   });
   return (
-    <Collapsible title="Invite people" summary="Share a link or send an email">
+    <Collapsible title="Invite people" summary="Link or email">
       <Text selectable style={styles.muted}>
         {link}
       </Text>
@@ -481,9 +477,6 @@ function InviteTools({ view: v }: { view: OrderView }) {
       >
         Send invitation
       </Button>
-      <Text style={styles.muted}>
-        Share only with people you want in this group.
-      </Text>
       <ErrorText message={a.error} />
     </Collapsible>
   );
@@ -513,12 +506,12 @@ function ShopStep({
         title="Shopping list"
         detail={
           shopping
-            ? "Check off each item as it goes in the cart."
-            : "Review the list, then start shopping when you’re at the store."
+            ? "Tick items as they go in the cart."
+            : "Start when you’re at the store."
         }
       />
       {shopping && (
-        <View style={styles.note}>
+        <View style={styles.card}>
           <View style={styles.between}>
             <Text style={styles.text}>In the cart</Text>
             <Text style={styles.h3}>
@@ -558,14 +551,14 @@ function ShopStep({
           view={v}
           to="shopping"
           label="Start shopping"
-          warning="You’ll check off items as you buy them."
+          warning="You’ll tick items off as you buy them."
           refresh={refresh}
           disabled={pending > 0 || needed.length === 0}
           blocker={
             pending > 0
               ? `Decide what to do with ${pending} unfilled pack${pending === 1 ? "" : "s"} first.`
               : needed.length === 0
-                ? "Nothing needs buying. You can cancel this order under More options."
+                ? "Nothing to buy. You can cancel under More options."
                 : undefined
           }
         />
@@ -575,12 +568,12 @@ function ShopStep({
           view={v}
           to="ready"
           label="Done shopping"
-          warning="Pickup opens and each member gets a collection code to show you."
+          warning="Pickup opens and members get their codes."
           refresh={refresh}
           disabled={bought < needed.length}
           blocker={
             bought < needed.length
-              ? `Check off ${needed.length - bought} more item${needed.length - bought === 1 ? "" : "s"} first.`
+              ? `${needed.length - bought} item${needed.length - bought === 1 ? "" : "s"} left to buy`
               : undefined
           }
         />
@@ -615,10 +608,10 @@ function ShopItem({
   return (
     <View
       style={{
-        borderWidth: 1,
-        borderColor: shopping && i.bought ? P.ink : P.line,
-        borderRadius: 10,
-        backgroundColor: P.paper,
+        borderWidth: 1.5,
+        borderColor: shopping && i.bought ? brand.greenDark : P.line,
+        borderRadius: 18,
+        backgroundColor: shopping && i.bought ? brand.greenSoft : P.paper,
         padding: 14,
         gap: 8,
       }}
@@ -650,11 +643,8 @@ function ShopItem({
       {i.shortfall > 0 && i.available && !readOnly && (
         <View style={styles.note}>
           <Text style={styles.text}>
-            {i.shortfall} share{i.shortfall === 1 ? "" : "s"} in the last pack
-            weren’t claimed.
-          </Text>
-          <Text style={styles.muted}>
-            Buy the pack anyway (you keep the extra) or skip this item.
+            {i.shortfall} share{i.shortfall === 1 ? "" : "s"} unclaimed in the
+            last pack. Buy it anyway (you keep the extra) or skip?
           </Text>
           <View style={[styles.row, { flexWrap: "wrap", gap: 8 }]}>
             <Choice
@@ -673,7 +663,7 @@ function ShopItem({
       {!readOnly && (
         <Collapsible
           title="Price or stock changed?"
-          summary="Update the pack price or mark it unavailable"
+          summary="Update price or availability"
         >
           <Check
             label={i.available ? "In stock" : "Unavailable at the store"}
@@ -698,9 +688,6 @@ function ShopItem({
           >
             Update price
           </Button>
-          <Text style={styles.muted}>
-            Members are notified when a price or availability changes.
-          </Text>
         </Collapsible>
       )}
       {!!i.storage && <Text style={styles.muted}>{i.storage}</Text>}
@@ -729,7 +716,7 @@ function HandOutStep({
         detail={`${o.pickupLocation} · ${when(o.pickupAt)} – ${when(o.pickupEnd)}`}
       />
       <DirectionsButton order={o} />
-      <View style={styles.note}>
+      <View style={styles.card}>
         <View style={styles.between}>
           <Text style={styles.text}>Bags handed out</Text>
           <Text style={styles.h3}>
@@ -751,8 +738,8 @@ function HandOutStep({
         <Advance
           view={v}
           to="completed"
-          label="Complete order"
-          warning="This closes the order and moves it to history."
+          label="Finish group"
+          warning="This moves the group to Done."
           refresh={refresh}
           disabled={collected < bags.length}
           blocker={
@@ -787,7 +774,11 @@ function HandOutBag({
         ? "Not here yet"
         : "Not here yet · pickup not confirmed";
   return (
-    <Collapsible title={m.name} summary={status} defaultOpen={!m.collectedAt}>
+    <Collapsible
+      title={m.name}
+      summary={`${status}${m.paidCents !== null ? " · Paid" : ""}`}
+      defaultOpen={!m.collectedAt}
+    >
       <View style={styles.row}>
         <View
           style={{
@@ -807,7 +798,10 @@ function HandOutBag({
               .join("")}
           </Text>
         </View>
-        <Text style={styles.h3}>{m.name}</Text>
+        <Text style={[styles.h3, { flex: 1 }]}>{m.name}</Text>
+        <Badge tone={m.paidCents !== null ? "good" : "neutral"}>
+          {m.paidCents !== null ? `Paid ${money(m.paidCents)}` : "Not paid yet"}
+        </Badge>
       </View>
       {m.claims
         .filter((c) => c.available && c.quantity > 0)
@@ -819,11 +813,9 @@ function HandOutBag({
             cost={money(c.estimateCents)}
           />
         ))}
-      <Text style={styles.muted}>
-        {money(m.estimateCents)} estimated product cost
-      </Text>
+      <Text style={styles.muted}>{money(m.estimateCents)} estimated</Text>
       {m.collectedAt ? (
-        <Text style={styles.h3}>Handed out ✓</Text>
+        <Badge tone="good">Handed out</Badge>
       ) : (
         !readOnly && (
           <>
@@ -833,7 +825,7 @@ function HandOutBag({
               autoCorrect={false}
               value={code}
               onChangeText={setCode}
-              placeholder="Ask them to show their code"
+              placeholder="From their phone"
             />
             <Button
               disabled={a.busy || !code.trim()}
@@ -864,11 +856,7 @@ function Done({ view: v }: { view: OrderView }) {
     <View style={styles.note}>
       <Text style={styles.h2}>Order complete</Text>
       <Text style={styles.text}>
-        {bags.length} bag{bags.length === 1 ? "" : "s"} handed out. Thanks for
-        organizing!
-      </Text>
-      <Text style={styles.muted}>
-        To run it again, use “Repeat as a new draft” below.
+        {bags.length} bag{bags.length === 1 ? "" : "s"} handed out. Nice work!
       </Text>
     </View>
   );
@@ -887,19 +875,12 @@ function DraftReview({
   return (
     <>
       <View style={styles.note}>
-        <Text style={styles.h3}>Review before publishing</Text>
+        <Text style={styles.h3}>Ready to publish?</Text>
         <Text style={styles.muted}>
           {o.visibility === "private"
-            ? "Only people with your invite link can join."
-            : "This order will appear in Community."}{" "}
-          Membership limit: {o.maxMembers}, including you.{" "}
-          {o.cadence !== "once"
-            ? `Intended cadence: ${o.cadence}. Each repeat needs a new draft.`
-            : ""}
-        </Text>
-        <Text style={styles.muted}>
-          Shares close {when(o.deadline)} · Pickup {when(o.pickupAt)} at{" "}
-          {o.pickupLocation}
+            ? "Only people with your link can join."
+            : "Everyone can find it in Browse."}{" "}
+          Shares close {when(o.deadline)}.
         </Text>
       </View>
       <Collapsible
@@ -941,7 +922,7 @@ function DraftReview({
           })
         }
       >
-        Publish order
+        Publish group
       </Button>
     </>
   );
@@ -959,7 +940,7 @@ function MoreOptions({
     [repeat, setRepeat] = useState(false);
   const ended = ["completed", "cancelled"].includes(o.status);
   return (
-    <Collapsible title="More options" summary="Repeat or cancel this order">
+    <Collapsible title="More options" summary="Repeat or cancel">
       <Button secondary onPress={() => setRepeat(!repeat)}>
         {repeat ? "Close repeat setup" : "Repeat as a new draft"}
       </Button>
@@ -968,8 +949,8 @@ function MoreOptions({
         <Advance
           view={v}
           to="cancelled"
-          label="Cancel order"
-          warning="This ends the order for everyone and invalidates collection codes."
+          label="Cancel group"
+          warning="This ends the group for everyone."
           refresh={refresh}
         />
       )}
@@ -990,9 +971,6 @@ function RepeatOrder({ orderId }: { orderId: string }) {
     next < d ? (set(new Date(d.getTime() + 2 * HOUR)), true) : false;
   return (
     <View style={styles.note}>
-      <Text style={styles.muted}>
-        Choose the new dates. You’ll review the new draft before publishing.
-      </Text>
       <DateTimeField
         label="Shares close"
         value={deadline}

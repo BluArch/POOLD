@@ -5,13 +5,15 @@ import {
   type RequestHandler,
 } from "express";
 import type { Pool } from "mysql2/promise";
-import { rateLimit } from "express-rate-limit";
+import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 import {
   registerInput,
   emailCodeInput,
   loginInput,
   profileInput,
+  forgotPasswordInput,
+  resetPasswordInput,
   type User,
 } from "@poold/contracts";
 import { first, execute } from "./db.js";
@@ -23,6 +25,7 @@ import {
   confirmVerification,
   verificationStatus,
 } from "./verification.js";
+import { issueReset, confirmReset, RESET_SENT } from "./password-reset.js";
 declare module "express-serve-static-core" {
   interface Request {
     user?: User;
@@ -71,18 +74,44 @@ export function auth(
 ) {
   const router = Router();
   const otpSecret = options.otpSecret;
-  const limit = rateLimit({
+  // Limits are per person, not per network, so a whole class on the same
+  // campus Wi-Fi isn't locked out by each other.
+  const message = (text: string) => ({
+    error: { code: "RATE_LIMIT", message: text },
+  });
+  const ip = (req: Request) => ipKeyGenerator(req.ip ?? "unknown");
+  const network = rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: 30,
+    limit: 400,
     standardHeaders: "draft-8",
     legacyHeaders: false,
-    message: {
-      error: {
-        code: "RATE_LIMIT",
-        message: "Too many attempts. Please retry in 15 minutes.",
-      },
-    },
+    keyGenerator: ip,
+    message: message(
+      "Too many sign-in attempts from this network. Try again in 15 minutes.",
+    ),
   });
+  const perEmail = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    keyGenerator: (req) =>
+      `${ip(req)}|${String(req.body?.email ?? "")
+        .trim()
+        .toLowerCase()}`,
+    message: message(
+      "Too many attempts for this email. Try again in 15 minutes.",
+    ),
+  });
+  const perUser = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 20,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    keyGenerator: (req) => req.user?.id ?? ip(req),
+    message: message("Too many attempts. Try again in 15 minutes."),
+  });
+  const limit = [network, perEmail];
   router.use(async (req, _res, next) => {
     const raw = req.headers.authorization?.startsWith("Bearer ")
       ? req.headers.authorization.slice(7)
@@ -126,7 +155,7 @@ export function auth(
   router.get("/session", (req, res) =>
     res.json({ user: req.user ?? null, demoEnabled: options.demo }),
   );
-  router.post("/auth/register", limit, async (req, res) => {
+  router.post("/auth/register", ...limit, async (req, res) => {
     const b = registerInput.parse(req.body),
       uid = id(),
       encoded = await passwordHash(b.password);
@@ -141,29 +170,33 @@ export function auth(
       otpSecret,
       options.sendMail,
     );
-    res
-      .status(201)
-      .json({
-        ...(await session(req, res, uid)),
-        verification,
-        message: verification.message,
-      });
+    res.status(201).json({
+      ...(await session(req, res, uid)),
+      verification,
+      message: verification.message,
+    });
   });
   router.get("/auth/verification", requireUser, async (req, res) =>
     res.json(await verificationStatus(db, req.user!.id)),
   );
-  router.post("/auth/verify", limit, requireUser, async (req, res) => {
-    const b = emailCodeInput.parse(req.body);
-    await confirmVerification(
-      db,
-      req.user!.id,
-      b.code,
-      otpSecret,
-      req.sessionHash,
-    );
-    res.json(await session(req, res, req.user!.id));
-  });
-  router.post("/auth/login", limit, async (req, res) => {
+  router.post(
+    "/auth/verify",
+    network,
+    requireUser,
+    perUser,
+    async (req, res) => {
+      const b = emailCodeInput.parse(req.body);
+      await confirmVerification(
+        db,
+        req.user!.id,
+        b.code,
+        otpSecret,
+        req.sessionHash,
+      );
+      res.json(await session(req, res, req.user!.id));
+    },
+  );
+  router.post("/auth/login", ...limit, async (req, res) => {
     const b = loginInput.parse(req.body),
       u = await first(db, "SELECT * FROM users WHERE email=?", [b.email]);
     const encoded = u?.password_hash ?? (await passwordHash("dummy-password"));
@@ -172,19 +205,35 @@ export function auth(
       fail(401, "INVALID_LOGIN", "Email or password is incorrect.");
     res.json(await session(req, res, u.id));
   });
-  router.post("/auth/resend", limit, requireUser, async (req, res) => {
-    const verification = await issueVerification(
-      db,
-      req.user!.id,
-      otpSecret,
-      options.sendMail,
-    );
-    if (verification.delivery === "failed")
-      fail(502, "EMAIL_DELIVERY_FAILED", verification.message);
-    res.json(verification);
+  router.post(
+    "/auth/resend",
+    network,
+    requireUser,
+    perUser,
+    async (req, res) => {
+      const verification = await issueVerification(
+        db,
+        req.user!.id,
+        otpSecret,
+        options.sendMail,
+      );
+      if (verification.delivery === "failed")
+        fail(502, "EMAIL_DELIVERY_FAILED", verification.message);
+      res.json(verification);
+    },
+  );
+  router.post("/auth/forgot", ...limit, async (req, res) => {
+    const b = forgotPasswordInput.parse(req.body);
+    await issueReset(db, b.email, otpSecret, options.sendMail);
+    res.json({ message: RESET_SENT });
+  });
+  router.post("/auth/reset", ...limit, async (req, res) => {
+    const b = resetPasswordInput.parse(req.body);
+    const uid = await confirmReset(db, b.email, b.code, b.password, otpSecret);
+    res.json(await session(req, res, uid));
   });
   if (options.demo)
-    router.post("/auth/demo", limit, async (req, res) => {
+    router.post("/auth/demo", network, async (req, res) => {
       const uid = z.literal("demo-maya").parse(req.body.userId);
       if (
         !(await first(db, "SELECT id FROM users WHERE id=? AND demo=TRUE", [

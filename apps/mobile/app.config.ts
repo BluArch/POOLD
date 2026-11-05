@@ -32,7 +32,15 @@ const config: ExpoConfig = {
       ? ["@react-native-firebase/app", "@react-native-firebase/messaging"]
       : []),
   ],
-  web: { bundler: "metro", output: "single" },
+  web: {
+    bundler: "metro",
+    output: "single",
+    name: "POOLD",
+    shortName: "POOLD",
+    themeColor: "#FBEFC5",
+    backgroundColor: "#F4EDE1",
+    favicon: "./public/favicon.png",
+  },
   extra: { fcmEnabled: process.env.EXPO_PUBLIC_FCM_ENABLED === "true" },
 };
 export default config;

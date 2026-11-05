@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { View, Text, Linking, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { View, Text, Linking } from "react-native";
+import { Sheet } from "./Sheet";
 import {
   type OrderView,
   type Item,
@@ -28,8 +29,8 @@ import {
   ReceiptPanel,
   ReceiptLine,
 } from "./Receipt";
-import { Zigzag, Chip, ChipRow } from "./Market";
-import { palette as P, type } from "../theme";
+import { Badge, Chip, ChipRow } from "./Market";
+import { palette as P, type, brand } from "../theme";
 
 /** What a buyer sees: available items first, then their own shares, then pickup. */
 export function MemberView({
@@ -50,49 +51,19 @@ export function MemberView({
     <>
       {canChange && (
         <>
-          <Text style={styles.h2}>Pick from the stall</Text>
+          <Text style={styles.h2}>Choose your shares</Text>
           {full ? (
             <View style={styles.note}>
-              <Text style={styles.text}>
-                Every spot in this group is taken. Check Discover for another
-                group.
-              </Text>
+              <Text style={styles.text}>This group is full.</Text>
             </View>
           ) : (
             <ShareChooser view={v} invite={invite} onSaved={refresh} />
           )}
         </>
       )}
-      {!canChange && hasShares && (
-        <View>
-          <View style={styles.section}>
-            <Text style={styles.h2}>Your shares</Text>
-            {v.myClaims.map((c) => (
-              <ReceiptLine
-                key={c.itemId}
-                name={`${c.name} ×${c.quantity}`}
-                category={v.items.find((i) => i.id === c.itemId)?.category}
-                cost={c.available ? money(c.estimateCents) : "Unavailable"}
-              />
-            ))}
-            <View style={styles.between}>
-              <Text style={type.mono}>EST. TOTAL</Text>
-              <Text style={type.total}>{money(v.myEstimateCents)}</Text>
-            </View>
-            <Text style={styles.muted}>
-              Shares are locked. Contact the organizer for changes.
-            </Text>
-          </View>
-          <Zigzag />
-        </View>
-      )}
-
       {!canChange && o.status === "open" && (
         <View style={styles.note}>
-          <Text style={styles.text}>
-            Shares closed {when(o.deadline)}, and the organizer is preparing the
-            shopping list.
-          </Text>
+          <Text style={styles.text}>Shares closed {when(o.deadline)}.</Text>
         </View>
       )}
 
@@ -105,23 +76,6 @@ export function MemberView({
       {(hasShares || !canChange) && (
         <PickupDetails view={v} refresh={refresh} />
       )}
-
-      <Collapsible
-        title="About this group"
-        summary={`Organized by ${o.organizerName} · ${o.memberCount} of ${o.maxMembers} joined`}
-      >
-        <Text style={styles.text}>
-          {o.store} run organized by {o.organizerName}
-        </Text>
-        <Text style={styles.muted}>
-          Shares close {when(o.deadline)} · Pickup {when(o.pickupAt)} –{" "}
-          {when(o.pickupEnd)} at {o.pickupLocation}.
-        </Text>
-        <Text style={styles.muted}>
-          Prices are product estimates in CAD. No payment is handled in the app.
-        </Text>
-        <DirectionsButton order={o} />
-      </Collapsible>
     </>
   );
 }
@@ -141,17 +95,13 @@ function GroupRequests({
   const open = r.data?.filter((q) => q.status === "open").length ?? 0;
   return (
     <Collapsible
-      title="Suggest a product"
+      title="Want something else?"
       summary={
         open
-          ? `${open} request${open === 1 ? "" : "s"} waiting for the organizer`
-          : "Ask the organizer to add an item to this group"
+          ? `${open} request${open === 1 ? "" : "s"} sent`
+          : "Ask the organizer to add an item"
       }
     >
-      <Text style={styles.muted}>
-        The organizer decides whether to add it. You’ll get an update either
-        way.
-      </Text>
       <RequestForm
         path={`/orders/${v.order.id}/requests${suffix}`}
         onDone={r.refresh}
@@ -283,13 +233,7 @@ function ShareChooser({
           }
         >
           {!releasing && (
-            <View
-              style={{
-                backgroundColor: P.paper,
-                borderRadius: 8,
-                paddingHorizontal: 10,
-              }}
-            >
+            <View>
               <Check
                 label="I can attend this pickup time"
                 value={attending}
@@ -318,6 +262,7 @@ export function DirectionsButton({ order: o }: { order: OrderView["order"] }) {
     <>
       <Button
         secondary
+        icon="navigate-outline"
         onPress={() =>
           void a.run(async () => {
             const destination =
@@ -330,7 +275,7 @@ export function DirectionsButton({ order: o }: { order: OrderView["order"] }) {
           })
         }
       >
-        {`Walking directions to ${o.pickupLocation}`}
+        Directions
       </Button>
       <ErrorText message={a.error} />
     </>
@@ -348,132 +293,75 @@ export function PickupDetails({
     m = v.mine,
     o = v.order;
   const needsPickup = !!m?.claims.some((c) => c.available);
-  const days = Math.ceil((Date.parse(o.pickupAt) - Date.now()) / 86400000);
   return (
     <>
-      <View>
-        <Zigzag top />
-        <View style={[styles.section, { borderRadius: 0, gap: 16 }]}>
-          {m && !needsPickup ? (
-            <Text style={styles.h3}>You have nothing to collect.</Text>
-          ) : m?.collectedAt ? (
-            <Text style={styles.h3}>Collected · {when(m.collectedAt)}</Text>
-          ) : (
-            <>
-              <Text style={type.mono}>
-                SHOW THIS CODE TO {o.organizerName.toUpperCase()}
-              </Text>
-              {v.collectionCode ? (
-                <Text
-                  selectable
-                  style={{
-                    ...type.total,
-                    fontFamily: "DMMono_500Medium",
-                    fontSize: 36,
-                    lineHeight: 46,
-                    letterSpacing: 1,
-                  }}
-                >
-                  {v.collectionCode.match(/.{1,4}/g)?.join(" ")}
-                </Text>
-              ) : (
-                <Text style={styles.muted}>
-                  {o.status === "shopping"
-                    ? "The organizer is shopping."
-                    : "Your share will be ready after shopping."}
-                </Text>
-              )}
-              {v.collectionCode && (
-                <Text style={styles.muted}>
-                  Show this to your organizer when you collect your bag.
-                </Text>
-              )}
-            </>
-          )}
+      <View style={[styles.card, { gap: 14 }]}>
+        <Text style={styles.h2}>Pickup</Text>
+        {m && !needsPickup ? (
+          <Text style={styles.muted}>Nothing to collect.</Text>
+        ) : m?.collectedAt ? (
+          <Badge tone="good">{`Collected ${when(m.collectedAt)}`}</Badge>
+        ) : v.collectionCode ? (
+          <View
+            style={{
+              backgroundColor: brand.yellow,
+              borderRadius: 16,
+              padding: 16,
+              gap: 4,
+              alignItems: "center",
+            }}
+          >
+            <Text style={[type.mono, { color: P.ink }]}>
+              Show this code to {o.organizerName.split(" ")[0]}
+            </Text>
+            <Text
+              selectable
+              style={{
+                ...type.total,
+                fontSize: 30,
+                lineHeight: 38,
+                letterSpacing: 2,
+                textAlign: "center",
+              }}
+            >
+              {v.collectionCode.match(/.{1,4}/g)?.join(" ")}
+            </Text>
+          </View>
+        ) : (
+          <Text style={styles.muted}>
+            {o.status === "shopping"
+              ? "The organizer is shopping now."
+              : "Your pickup code appears after shopping."}
+          </Text>
+        )}
+        {!!v.myClaims.length && (
           <View
             style={{
               borderTopWidth: 1,
-              borderStyle: "dashed",
               borderColor: P.line,
-              paddingTop: 16,
-              gap: 16,
+              paddingTop: 14,
+              gap: 10,
             }}
           >
-            <View style={styles.row}>
-              <View
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 11,
-                  backgroundColor: P.track,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Ionicons name="location-outline" size={24} color={P.chalk} />
-              </View>
-              <View style={{ flex: 1, gap: 4 }}>
-                <Text style={type.mono}>PICKUP PLACE</Text>
-                <Text style={styles.text}>{o.pickupLocation}</Text>
-              </View>
-            </View>
-            <View style={styles.row}>
-              <View
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 11,
-                  backgroundColor: P.track,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Ionicons name="time-outline" size={24} color={P.chalk} />
-              </View>
-              <View style={{ flex: 1, gap: 4 }}>
-                <Text style={styles.text}>
-                  {when(o.pickupAt)} – {when(o.pickupEnd)}
-                </Text>
-                <Text style={type.mono}>
-                  {days > 0
-                    ? `IN ${days} ${days === 1 ? "DAY" : "DAYS"}`
-                    : days === 0
-                      ? "PICKUP DAY"
-                      : "PICKUP TIME PASSED"}
-                </Text>
-              </View>
+            <Text style={styles.label}>In your bag</Text>
+            {v.myClaims.map((c) => (
+              <ReceiptLine
+                key={c.itemId}
+                name={`${c.name} ×${c.quantity}`}
+                category={v.items.find((i) => i.id === c.itemId)?.category}
+                cost={c.available ? money(c.estimateCents) : "Unavailable"}
+              />
+            ))}
+            <View style={styles.between}>
+              <Text style={type.mono}>Estimated total</Text>
+              <Text style={type.total}>{money(v.myEstimateCents)}</Text>
             </View>
           </View>
-          {!!v.myClaims.length && (
-            <View
-              style={{
-                borderTopWidth: 1,
-                borderStyle: "dashed",
-                borderColor: P.line,
-                paddingTop: 16,
-                gap: 12,
-              }}
-            >
-              <Text style={styles.h2}>In your bag</Text>
-              {v.myClaims.map((c) => (
-                <ReceiptLine
-                  key={c.itemId}
-                  name={`${c.name} ×${c.quantity}`}
-                  category={v.items.find((i) => i.id === c.itemId)?.category}
-                  cost={c.available ? money(c.estimateCents) : "Unavailable"}
-                />
-              ))}
-              <View style={styles.between}>
-                <Text style={type.mono}>EST. TOTAL</Text>
-                <Text style={type.total}>{money(v.myEstimateCents)}</Text>
-              </View>
-            </View>
-          )}
-        </View>
-        <Zigzag />
+        )}
       </View>
       {m && needsPickup && !m.collectedAt && o.status === "ready" && (
         <Button
+          icon="hand-left-outline"
           disabled={a.busy || m.arrived}
           onPress={() =>
             void a.run(async () => {
@@ -482,13 +370,105 @@ export function PickupDetails({
             })
           }
         >
-          {m.arrived
-            ? "Organizer notified you arrived"
-            : "I’m at the pickup place"}
+          {m.arrived ? "Organizer knows you’re here" : "I’m here"}
         </Button>
+      )}
+      {m && needsPickup && !v.isOrganizer && (
+        <PayShare view={v} refresh={refresh} />
       )}
       <DirectionsButton order={o} />
       <ErrorText message={a.error} />
+    </>
+  );
+}
+
+/**
+ * Pay your share once shopping is done. Always test mode: Stripe test
+ * checkout if the server has a test key, otherwise a built-in test screen.
+ */
+function PayShare({
+  view: v,
+  refresh,
+}: {
+  view: OrderView;
+  refresh: () => Promise<void>;
+}) {
+  const a = useAction(),
+    [sheet, setSheet] = useState(false);
+  const m = v.mine!,
+    o = v.order;
+  if (m.paidCents !== null)
+    return (
+      <View style={[styles.card, styles.row]}>
+        <Ionicons name="checkmark-circle" size={24} color={brand.greenDark} />
+        <Text style={[styles.text, { flex: 1 }]}>
+          Paid {money(m.paidCents)}
+        </Text>
+        <Badge tone="good">Test payment</Badge>
+      </View>
+    );
+  if (!["ready", "completed"].includes(o.status))
+    return (
+      <Text style={[styles.muted, { textAlign: "center" }]}>
+        You’ll pay after shopping, once the final price is known.
+      </Text>
+    );
+  const start = () =>
+    a.run(async () => {
+      const r = await post<{ mode: string; url?: string }>(
+        `/orders/${o.id}/pay`,
+      );
+      if (r.mode === "demo" || !r.url) setSheet(true);
+      else if (Platform.OS === "web") window.location.assign(r.url);
+      else await Linking.openURL(r.url);
+    });
+  return (
+    <>
+      <Button
+        icon="card-outline"
+        disabled={a.busy}
+        onPress={() => void start()}
+      >
+        {`Pay ${money(v.myEstimateCents)}`}
+      </Button>
+      <Text style={[styles.muted, { textAlign: "center", fontSize: 13 }]}>
+        Test mode. No real money is charged.
+      </Text>
+      <ErrorText message={a.error} />
+      <Sheet
+        title="Test payment"
+        visible={sheet}
+        onClose={() => setSheet(false)}
+      >
+        <View
+          style={{
+            backgroundColor: brand.yellowSoft,
+            borderRadius: 18,
+            padding: 16,
+            gap: 6,
+          }}
+        >
+          <Text style={type.mono}>Your share of {o.name}</Text>
+          <Text style={type.total}>{money(v.myEstimateCents)}</Text>
+          <Text style={type.mono}>Paid to {o.organizerName}</Text>
+        </View>
+        <Text style={styles.muted}>
+          This is a demo. Nothing is charged and no card is needed.
+        </Text>
+        <Button
+          disabled={a.busy}
+          onPress={() =>
+            void a.run(async () => {
+              await post(`/orders/${o.id}/pay/demo`);
+              setSheet(false);
+              await refresh();
+            })
+          }
+        >
+          {a.busy ? "Paying…" : `Pay ${money(v.myEstimateCents)}`}
+        </Button>
+        <ErrorText message={a.error} />
+      </Sheet>
     </>
   );
 }

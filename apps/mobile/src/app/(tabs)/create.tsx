@@ -1,4 +1,4 @@
-import { palette as P } from "../../theme";
+import { palette as P, type, brand } from "../../theme";
 import React, { useState, useEffect } from "react";
 import { View, Text } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
@@ -168,12 +168,13 @@ function DraftForm({ id }: { id?: string }) {
     );
   return (
     <Screen
-      title={id ? "Edit draft" : "Start a group"}
-      subtitle="Save a draft, review it, then publish."
-      back
+      title={id ? "Edit draft" : "New group"}
+      subtitle={id ? undefined : "Save a draft, then publish when ready"}
+      role="organizing"
+      back={!!id}
     >
-      <View style={styles.section}>
-        <Text style={styles.h2}>The group</Text>
+      <View style={styles.card}>
+        <Step n={1} title="The group" />
         <Field
           label="Group name"
           value={name}
@@ -202,7 +203,7 @@ function DraftForm({ id }: { id?: string }) {
         <View style={styles.between}>
           <View style={{ flex: 1 }}>
             <Text style={styles.label}>Maximum people</Text>
-            <Text style={styles.muted}>Including you, 2–10.</Text>
+            <Text style={styles.muted}>Including you</Text>
           </View>
           <QuantityStepper
             label="people"
@@ -213,14 +214,13 @@ function DraftForm({ id }: { id?: string }) {
         </View>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.h2}>When</Text>
+      <View style={styles.card}>
+        <Step n={2} title="When" />
         <DateTimeField
           label="Shares close"
           value={deadline}
           onChange={changeDeadline}
           min={new Date()}
-          hint="Members can join and change shares until then."
         />
         <DateTimeField
           label="You go shopping"
@@ -257,16 +257,10 @@ function DraftForm({ id }: { id?: string }) {
             />
           ))}
         </View>
-        {cadence !== "once" && (
-          <Text style={styles.muted}>
-            You’ll create each repeat as a new draft from the finished group.
-          </Text>
-        )}
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.h2}>Where</Text>
-        <Text style={styles.label}>Public pickup place</Text>
+      <View style={styles.card}>
+        <Step n={3} title="Pickup place" />
         <View style={{ gap: 8 }}>
           {PICKUP_PLACES.map((p) => (
             <Choice
@@ -296,24 +290,12 @@ function DraftForm({ id }: { id?: string }) {
         />
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.h2}>Items</Text>
-        <Text style={styles.muted}>
-          Pick an item and how much goes in each share. The app works out the
-          number of shares and the price per share.
-        </Text>
+      <View style={{ gap: 2, paddingHorizontal: 4 }}>
+        <Step n={4} title="Items" />
+        <Text style={styles.muted}>We work out the shares and price.</Text>
       </View>
       {items.map((d, n) => (
-        <View
-          key={n}
-          style={{
-            borderWidth: 1,
-            borderColor: P.line,
-            borderRadius: 12,
-            padding: 16,
-            gap: 12,
-          }}
-        >
+        <View key={n} style={[styles.card, { gap: 12 }]}>
           <ItemEditor
             title={items.length > 1 ? `Item ${n + 1}` : "Item"}
             value={d}
@@ -331,13 +313,17 @@ function DraftForm({ id }: { id?: string }) {
         </View>
       ))}
       {items.length < 30 && (
-        <Button secondary onPress={() => setItems([...items, emptyDraft()])}>
+        <Button
+          secondary
+          icon="add"
+          onPress={() => setItems([...items, emptyDraft()])}
+        >
           Add another item
         </Button>
       )}
       <ErrorText message={a.error} />
       <ScreenFooter>
-        <View style={styles.note}>
+        <View style={{ gap: 6 }}>
           <ErrorText message={a.error} />
           <Button disabled={a.busy} onPress={() => void save()}>
             {a.busy ? "Saving…" : "Save draft"}
@@ -345,5 +331,25 @@ function DraftForm({ id }: { id?: string }) {
         </View>
       </ScreenFooter>
     </Screen>
+  );
+}
+
+function Step({ n, title }: { n: number; title: string }) {
+  return (
+    <View style={[styles.row, { gap: 10 }]}>
+      <View
+        style={{
+          width: 26,
+          height: 26,
+          borderRadius: 13,
+          backgroundColor: brand.greenDark,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Text style={[type.label, { color: P.white, fontSize: 13 }]}>{n}</Text>
+      </View>
+      <Text style={styles.h2}>{title}</Text>
+    </View>
   );
 }

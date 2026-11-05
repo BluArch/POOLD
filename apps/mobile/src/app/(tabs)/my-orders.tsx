@@ -1,122 +1,78 @@
 import React, { useState } from "react";
-import { Text, View } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { router } from "expo-router";
 import type { OrderSummary } from "@poold/contracts";
 import {
   Screen,
   Button,
-  styles,
+  EmptyState,
   useResource,
   ResourceState,
 } from "../../components/ui";
 import { OrderRow } from "../../components/OrderRow";
-import { Chip, ChipRow } from "../../components/Market";
+import { Segmented } from "../../components/Sections";
 import { useSession } from "../../session";
-type Frame = "upcoming" | "organizing" | "past";
+
+type Frame = "upcoming" | "past";
 const ended = (o: OrderSummary) =>
   o.status === "completed" || o.status === "cancelled";
+
+/** Buyer side: the groups you've joined. Groups you organize live in Organizing. */
 export default function MyOrders() {
-  const mine = useResource<OrderSummary[]>("/orders?scope=mine");
-  const organizing = useResource<OrderSummary[]>("/orders?scope=organizing");
-  const resource = {
-    loading: mine.loading || organizing.loading,
-    error: mine.error || organizing.error,
-    refresh: async () => {
-      await Promise.all([mine.refresh(), organizing.refresh()]);
-    },
-  };
-  const loaded =
-    !resource.loading &&
-    !resource.error &&
-    mine.data !== null &&
-    organizing.data !== null;
+  const r = useResource<OrderSummary[]>("/orders?scope=mine");
   const session = useSession();
-  const { filter } = useLocalSearchParams<{ filter?: string }>();
-  const [choice, setChoice] = useState<Frame>("upcoming");
-  const frame: Frame =
-    filter === "organizing" || filter === "past" || filter === "upcoming"
-      ? filter
-      : choice;
-  const all = [
-    ...new Map(
-      [...(mine.data ?? []), ...(organizing.data ?? [])].map((o) => [o.id, o]),
-    ).values(),
-  ];
+  const [frame, setFrame] = useState<Frame>("upcoming");
+  const joined = (r.data ?? []).filter(
+    (o) => o.organizerId !== session.user?.id,
+  );
   const forFrame = (f: Frame) =>
-    all.filter((o) =>
-      f === "past"
-        ? ended(o)
-        : !ended(o) &&
-          (f !== "upcoming" || o.status !== "draft") &&
-          (f !== "organizing" || o.organizerId === session.user?.id),
-    );
+    joined.filter((o) => (f === "past" ? ended(o) : !ended(o)));
   const list = forFrame(frame).sort(
-    (a, b) =>
-      (frame === "organizing"
-        ? Number(b.status === "draft") - Number(a.status === "draft")
-        : 0) || Date.parse(a.pickupAt) - Date.parse(b.pickupAt),
+    (a, b) => Date.parse(a.pickupAt) - Date.parse(b.pickupAt),
   );
   return (
     <Screen
-      title="My groups"
-      subtitle="Your shares and shopping runs"
-      onRefresh={() => void resource.refresh()}
-      refreshing={resource.loading}
+      title="My shares"
+      subtitle="Groups you’ve joined"
+      roleSwitch
+      onRefresh={() => void r.refresh()}
+      refreshing={r.loading}
       header={
-        <ChipRow>
-          {(
-            [
-              ["upcoming", "Upcoming"],
-              ["organizing", "Organizing"],
-              ["past", "Past"],
-            ] as const
-          ).map(([value, label]) => (
-            <Chip
-              key={value}
-              dark
-              label={loaded ? `${label} ${forFrame(value).length}` : label}
-              selected={frame === value}
-              onPress={() => {
-                setChoice(value);
-                router.setParams({ filter: value });
-              }}
-            />
-          ))}
-        </ChipRow>
+        <Segmented<Frame>
+          options={[
+            {
+              value: "upcoming",
+              label: `Upcoming ${r.data ? forFrame("upcoming").length : ""}`,
+            },
+            {
+              value: "past",
+              label: `Past ${r.data ? forFrame("past").length : ""}`,
+            },
+          ]}
+          value={frame}
+          onChange={setFrame}
+        />
       }
     >
-      <ResourceState resource={resource} />
+      <ResourceState resource={r} />
       {list.map((o) => (
-        <OrderRow
-          key={o.id}
-          order={o}
-          showStatus
-          organize={o.organizerId === session.user?.id}
-        />
+        <OrderRow key={o.id} order={o} showStatus />
       ))}
-      {loaded && !list.length && (
-        <View style={styles.note}>
-          <Text style={styles.h3}>
-            {frame === "past"
-              ? "Past groups will appear here."
-              : "A little better, together."}
-          </Text>
-          <Text style={styles.muted}>
-            {frame === "organizing"
-              ? "Start a group to plan your next shopping run."
-              : "Discover a group and claim your first share."}
-          </Text>
-          <Button
-            secondary
-            onPress={() =>
-              router.push(
-                frame === "organizing" ? "/(tabs)/create" : "/(tabs)/community",
-              )
-            }
-          >
-            {frame === "organizing" ? "Start a group" : "Discover groups"}
-          </Button>
-        </View>
+      {r.data && !list.length && (
+        <EmptyState
+          icon="bag-handle-outline"
+          title={frame === "past" ? "Nothing here yet" : "No shares yet"}
+          message={
+            frame === "past"
+              ? "Finished groups will show up here."
+              : "Join a group and pick your first share."
+          }
+        >
+          {frame === "upcoming" && (
+            <Button onPress={() => router.navigate("/(tabs)/community")}>
+              Find a group
+            </Button>
+          )}
+        </EmptyState>
       )}
     </Screen>
   );

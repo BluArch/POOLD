@@ -2,11 +2,20 @@ import React from "react";
 import { View, Text, Pressable } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { type OrderSummary, STATUS_LABELS, money } from "@poold/contracts";
-import { styles, when } from "./ui";
-import { palette as P, type, deadlineLabel } from "../theme";
+import { type OrderSummary, money } from "@poold/contracts";
+import { styles } from "./ui";
+import { palette as P, type, deadlineLabel, shadow, brand } from "../theme";
 import { ItemIcon } from "./ItemIcon";
-import { Stamp, PriceTag, DottedLeader, Zigzag } from "./Market";
+import { Badge, STATUS_TEXT } from "./Market";
+
+const day = (date: string) =>
+  new Date(date).toLocaleString("en-CA", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 
 export function OrderRow({
   order: o,
@@ -31,10 +40,34 @@ export function OrderRow({
         unit: null,
       }));
   const count = o.preview.split(" · ").filter(Boolean).length;
+  const perShare = items
+    .filter((i) => i.sharesPerPack > 0)
+    .map((i) =>
+      Math.floor(
+        (i.priceCents + Math.floor(i.sharesPerPack / 2)) / i.sharesPerPack,
+      ),
+    );
+  const from = perShare.length ? Math.min(...perShare) : 0;
   const organizer = o.organizerName
     .split(" ")
     .map((name, i) => (i ? `${name[0]}.` : name))
     .join(" ");
+  const closingSoon =
+    o.status === "open" && Date.parse(o.deadline) - Date.now() < 86400000;
+  const badge =
+    showStatus || o.status !== "open"
+      ? STATUS_TEXT[o.status]
+      : deadlineLabel(o.deadline);
+  const tone =
+    o.status === "cancelled" || (closingSoon && !showStatus)
+      ? "urgent"
+      : o.status === "ready"
+        ? "good"
+        : o.status === "draft"
+          ? "neutral"
+          : organize
+            ? "organizer"
+            : "buyer";
   return (
     <Pressable
       accessibilityRole="button"
@@ -46,94 +79,106 @@ export function OrderRow({
         })
       }
       style={({ pressed }) => ({
-        marginBottom: 16,
-        opacity: pressed ? 0.7 : 1,
+        marginBottom: 12,
+        opacity: pressed ? 0.8 : 1,
+        transform: [{ scale: pressed ? 0.99 : 1 }],
       })}
     >
       <View
         style={{
           backgroundColor: P.paper,
-          borderWidth: 1,
-          borderColor: P.line,
-          borderTopLeftRadius: 12,
-          borderTopRightRadius: 12,
+          borderRadius: 20,
           padding: 16,
           gap: 12,
+          ...shadow,
         }}
       >
-        <View style={[styles.between, { alignItems: "flex-start" }]}>
-          <Text style={[type.mono, { flex: 1 }]}>
-            {[o.store, organizer, o.visibility === "private" ? "Private" : ""]
-              .filter(Boolean)
-              .join(" · ")
-              .toUpperCase()}
-          </Text>
-          <Stamp
-            urgent={
-              o.status === "cancelled" ||
-              (!showStatus && Date.parse(o.deadline) - Date.now() < 86400000)
-            }
-          >
-            {showStatus ? STATUS_LABELS[o.status] : deadlineLabel(o.deadline)}
-          </Stamp>
-        </View>
-        {showStatus && (
-          <Text style={[type.mono, { color: P.herbText }]}>
-            {organize ? "ORGANIZING" : "JOINED"}
-          </Text>
-        )}
-        <Text style={type.cardTitle}>{o.name}</Text>
-        {items.map((item, index) => (
-          <View key={`${item.name}-${index}`} style={[styles.row, { gap: 8 }]}>
-            <ItemIcon item={item} size={26} />
-            <Text style={[type.body, { flexShrink: 1 }]}>{item.name}</Text>
-            <DottedLeader />
-            {item.sharesPerPack > 0 && (
-              <Text style={[type.mono, { color: P.ink }]}>
-                {money(
-                  Math.floor(
-                    (item.priceCents + Math.floor(item.sharesPerPack / 2)) /
-                      item.sharesPerPack,
-                  ),
-                )}
-                /share
+        <View style={[styles.between, { alignItems: "center" }]}>
+          <View style={[styles.row, { gap: 10, flex: 1 }]}>
+            <View
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 18,
+                backgroundColor: organize ? brand.greenSoft : brand.yellowSoft,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons
+                name={
+                  o.kind === "quick" ? "flash-outline" : "storefront-outline"
+                }
+                size={18}
+                color={organize ? brand.greenDeep : P.ink}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[type.label, { fontSize: 13 }]} numberOfLines={1}>
+                {o.store}
+                {o.visibility === "private" ? " · Private" : ""}
               </Text>
-            )}
-          </View>
-        ))}
-        {count > 4 && <Text style={type.mono}>+{count - 4} MORE</Text>}
-        {!items.length && <Text style={styles.muted}>No available items</Text>}
-        <View
-          style={{
-            borderTopWidth: 1,
-            borderStyle: "dashed",
-            borderColor: P.line,
-            paddingTop: 12,
-            gap: 10,
-          }}
-        >
-          <View
-            style={[
-              styles.row,
-              { flexWrap: "wrap", justifyContent: "space-between" },
-            ]}
-          >
-            <PriceTag
-              spots
-            >{`${o.memberCount} of ${o.maxMembers} spots`}</PriceTag>
-            <View style={[styles.row, { gap: 4, flexShrink: 1 }]}>
-              <Ionicons name="location-outline" size={14} color={P.muted} />
-              <Text style={[type.mono, { flexShrink: 1 }]}>
-                {o.pickupLocation}
+              <Text style={[type.mono, { fontSize: 12 }]} numberOfLines={1}>
+                {organize ? "You organize" : `by ${organizer}`}
               </Text>
             </View>
           </View>
-          <Text style={type.mono}>
-            PICKUP · {when(o.pickupAt).toUpperCase()}
-          </Text>
+          <Badge tone={tone}>{badge}</Badge>
+        </View>
+        <Text style={type.cardTitle} numberOfLines={2}>
+          {o.name}
+        </Text>
+        {items.length > 0 ? (
+          <View style={[styles.row, { gap: 6 }]}>
+            {items.slice(0, 4).map((item, index) => (
+              <ItemIcon key={`${item.name}-${index}`} item={item} size={36} />
+            ))}
+            <Text
+              style={[type.mono, { flex: 1, marginLeft: 4 }]}
+              numberOfLines={2}
+            >
+              {count} {count === 1 ? "item" : "items"}
+              {from > 0 ? ` · from ${money(from)}/share` : ""}
+            </Text>
+          </View>
+        ) : (
+          <Text style={styles.muted}>No items yet</Text>
+        )}
+        <View
+          style={{
+            flexDirection: "row",
+            flexWrap: "wrap",
+            gap: 14,
+            borderTopWidth: 1,
+            borderColor: P.line,
+            paddingTop: 12,
+          }}
+        >
+          <Meta icon="people-outline">{`${o.memberCount}/${o.maxMembers}`}</Meta>
+          <Meta icon="time-outline">{day(o.pickupAt)}</Meta>
+          <Meta icon="location-outline">{o.pickupLocation}</Meta>
         </View>
       </View>
-      <Zigzag />
     </Pressable>
+  );
+}
+
+function Meta({
+  icon,
+  children,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  children: string;
+}) {
+  return (
+    <View style={[styles.row, { gap: 4, flexShrink: 1 }]}>
+      <Ionicons name={icon} size={15} color={P.muted} />
+      <Text
+        style={[type.mono, { fontSize: 12, flexShrink: 1 }]}
+        numberOfLines={1}
+      >
+        {children}
+      </Text>
+    </View>
   );
 }

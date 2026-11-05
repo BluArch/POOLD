@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Text, Pressable, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useLocalSearchParams, Redirect } from "expo-router";
 import { useSession } from "../session";
+import { post } from "../api";
 import EmailVerification from "../components/EmailVerification";
 import {
   Screen,
@@ -12,7 +13,9 @@ import {
   ErrorText,
   styles,
 } from "../components/ui";
-import { palette as P, type } from "../theme";
+import { palette as P } from "../theme";
+import { Onboarding } from "../components/Onboarding";
+import { getPref, setPref } from "../storage";
 export default function Home() {
   const s = useSession(),
     query = useLocalSearchParams<{
@@ -24,11 +27,15 @@ export default function Home() {
     [passwordVisible, setPasswordVisible] = useState(false),
     [name, setName] = useState(""),
     [mode, setMode] = useState<"login" | "register">("login"),
-    // First screen for signed-out visitors: what POOLD is, before the form.
-    [welcome, setWelcome] = useState(true),
+    // Intro slides: shown once on first open, then straight to sign-in.
+    [intro, setIntro] = useState<boolean | null>(null),
+    [forgot, setForgot] = useState(false),
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void getPref("poold.onboarded").then((v) => setIntro(v !== "yes"));
+  }, []);
   const run = async (work: () => Promise<unknown>) => {
     setBusy(true);
     setError("");
@@ -40,7 +47,17 @@ export default function Home() {
       setBusy(false);
     }
   };
-  if (s.loading) return <Loading />;
+  if (s.loading || intro === null) return <Loading />;
+  if (forgot)
+    return (
+      <ForgotPassword
+        initialEmail={email}
+        onBack={() => {
+          setForgot(false);
+          setError("");
+        }}
+      />
+    );
   if (s.user?.verified)
     return (
       <Redirect
@@ -68,27 +85,31 @@ export default function Home() {
         }}
       />
     );
-  if (welcome && !s.error)
+  if (intro && !s.error)
     return (
-      <Welcome
-        invited={!!query.order}
-        onStart={(next) => {
+      <Onboarding
+        onDone={(next) => {
+          void setPref("poold.onboarded", "yes");
           setMode(next);
           setError("");
           setMessage("");
-          setWelcome(false);
+          setIntro(false);
         }}
       />
     );
   return (
     <Screen
-      title={mode === "login" ? "Sign in" : "Create your account"}
-      subtitle="Good things, shared."
+      title={mode === "login" ? "Welcome back" : "Create your account"}
+      subtitle="Split bulk groceries with students near you."
     >
-      <View style={styles.section}>
-        <Button secondary onPress={() => setWelcome(true)}>
-          What is POOLD?
-        </Button>
+      {!!query.order && (
+        <View style={styles.note}>
+          <Text style={styles.text}>
+            You’ve been invited to a group. Sign in to see it.
+          </Text>
+        </View>
+      )}
+      <View style={styles.card}>
         <ErrorText message={error || s.error} />
         {!!s.error && (
           <Button secondary onPress={() => void run(s.refresh)}>
@@ -142,10 +163,22 @@ export default function Home() {
             />
           </Pressable>
         </View>
-        {mode === "register" && (
-          <Text style={styles.muted}>
-            Use at least 8 characters for your password.
-          </Text>
+        {mode === "register" ? (
+          <Text style={styles.muted}>At least 8 characters.</Text>
+        ) : (
+          <Pressable
+            accessibilityRole="link"
+            onPress={() => setForgot(true)}
+            style={{
+              alignSelf: "flex-end",
+              minHeight: 36,
+              justifyContent: "center",
+            }}
+          >
+            <Text style={[styles.label, { color: P.carrot }]}>
+              Forgot password?
+            </Text>
+          </Pressable>
         )}
         <Button
           disabled={busy}
@@ -182,10 +215,16 @@ export default function Home() {
           {mode === "login" ? "Create an account" : "Back to sign in"}
         </Button>
       </View>
+      <Pressable
+        accessibilityRole="link"
+        onPress={() => setIntro(true)}
+        style={{ alignSelf: "center", minHeight: 44, justifyContent: "center" }}
+      >
+        <Text style={[styles.label, { color: P.muted }]}>What is POOLD?</Text>
+      </Pressable>
       {s.demoEnabled && (
         <View style={styles.section}>
-          <Text style={styles.h2}>Local demo</Text>
-          <Text style={styles.muted}>Explore POOLD with a sample account.</Text>
+          <Text style={styles.h3}>Try the demo</Text>
           <Button
             secondary
             disabled={busy}
@@ -200,88 +239,116 @@ export default function Home() {
     </Screen>
   );
 }
-const STEPS: {
-  icon: React.ComponentProps<typeof Ionicons>["name"];
-  title: string;
-  body: string;
-}[] = [
-  {
-    icon: "people-outline",
-    title: "Join a group",
-    body: "Find a group near campus that’s heading to a bulk store like Costco.",
-  },
-  {
-    icon: "pie-chart-outline",
-    title: "Take only your share",
-    body: "Claim just the part you want, like 2 cans from an 8-pack, at the bulk price.",
-  },
-  {
-    icon: "bag-check-outline",
-    title: "Pick it up on campus",
-    body: "Collect your bag at a public pickup spot with a one-time code.",
-  },
-];
 
-/** Short introduction shown before sign-in. */
-function Welcome({
-  invited,
-  onStart,
+/** Email a six-digit code, then set a new password with it. */
+function ForgotPassword({
+  initialEmail,
+  onBack,
 }: {
-  invited: boolean;
-  onStart: (mode: "login" | "register") => void;
+  initialEmail: string;
+  onBack: () => void;
 }) {
+  const s = useSession();
+  const [email, setEmail] = useState(initialEmail),
+    [code, setCode] = useState(""),
+    [password, setPassword] = useState(""),
+    [sent, setSent] = useState(""),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false);
+  const run = async (work: () => Promise<unknown>) => {
+    setBusy(true);
+    setError("");
+    try {
+      await work();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <Screen
-      title="Good things, shared."
-      titleStyle={{ fontSize: 40, lineHeight: 46 }}
-      subtitle="Bulk groceries. Portions that fit your life."
-      header={
-        <View style={{ minHeight: 76, justifyContent: "center" }}>
-          <Text style={[type.body, { color: P.chalkMuted }]}>
-            A little market for your campus community.
-          </Text>
-        </View>
+      title="Reset password"
+      subtitle={
+        sent ? "Check your email for the code." : "We’ll email you a code."
       }
     >
-      <View style={{ gap: 20 }}>
-        {invited && (
-          <View style={styles.note}>
-            <Text style={styles.text}>
-              You’ve been invited to a group. Sign in or create an account to
-              see it.
-            </Text>
-          </View>
+      <View style={styles.card}>
+        <Field
+          label="Email address"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          autoComplete="email"
+          value={email}
+          onChangeText={setEmail}
+        />
+        {!!sent && (
+          <>
+            <Text style={styles.muted}>{sent}</Text>
+            <Field
+              label="Six-digit code"
+              keyboardType="number-pad"
+              autoComplete="one-time-code"
+              maxLength={6}
+              value={code}
+              onChangeText={(v) => setCode(v.replace(/\D/g, ""))}
+            />
+            <Field
+              label="New password"
+              secureTextEntry
+              autoCapitalize="none"
+              autoComplete="new-password"
+              value={password}
+              onChangeText={setPassword}
+            />
+            <Text style={styles.muted}>At least 8 characters.</Text>
+          </>
         )}
-        {STEPS.map((step) => (
-          <View
-            key={step.title}
-            style={[styles.row, { alignItems: "flex-start" }]}
-          >
-            <View
-              style={{
-                width: 48,
-                height: 48,
-                borderRadius: 12,
-                backgroundColor: P.track,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
+        <ErrorText message={error} />
+        {sent ? (
+          <>
+            <Button
+              disabled={busy || code.length !== 6 || password.length < 8}
+              onPress={() =>
+                void run(() =>
+                  s.login("/auth/reset", { email, code, password }),
+                )
+              }
             >
-              <Ionicons name={step.icon} size={26} color={P.chalk} />
-            </View>
-            <View style={{ flex: 1, gap: 4 }}>
-              <Text style={type.item}>{step.title}</Text>
-              <Text style={styles.muted}>{step.body}</Text>
-            </View>
-          </View>
-        ))}
-        <Text style={styles.muted}>
-          Going shopping anyway? Start a group and keep your shares, shopping
-          list and pickup together.
-        </Text>
-        <Button onPress={() => onStart("register")}>Get started</Button>
-        <Button secondary onPress={() => onStart("login")}>
-          I already have an account
+              {busy ? "Please wait…" : "Set new password"}
+            </Button>
+            <Button
+              secondary
+              disabled={busy}
+              onPress={() =>
+                void run(async () => {
+                  const r = await post<{ message: string }>("/auth/forgot", {
+                    email,
+                  });
+                  setSent(r.message);
+                })
+              }
+            >
+              Send a new code
+            </Button>
+          </>
+        ) : (
+          <Button
+            disabled={busy || !email.trim()}
+            onPress={() =>
+              void run(async () => {
+                const r = await post<{ message: string }>("/auth/forgot", {
+                  email,
+                });
+                setSent(r.message);
+              })
+            }
+          >
+            {busy ? "Sending…" : "Send code"}
+          </Button>
+        )}
+        <Button secondary onPress={onBack}>
+          Back to sign in
         </Button>
       </View>
     </Screen>

@@ -1,50 +1,15 @@
-import React, { useState } from "react";
+import React from "react";
 import { View, Text, Pressable, ScrollView } from "react-native";
-import Svg, { Path, Line } from "react-native-svg";
 import type { Status } from "@poold/contracts";
-import { palette as P, type, fonts, shape } from "../theme";
+import { palette as P, type, fonts, brand } from "../theme";
 
-export function Zigzag({
-  color = P.paper,
-  top = false,
-}: {
-  color?: string;
-  top?: boolean;
-}) {
-  const [width, setWidth] = useState(360);
-  const d = `M0 0 ${Array.from({ length: Math.ceil(width / 12) }, (_, i) => `L${i * 12 + 6} 8 L${i * 12 + 12} 0`).join(" ")} Z`;
-  return (
-    <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
-      <Svg
-        aria-hidden={true}
-        focusable={false}
-        width="100%"
-        height={8}
-        viewBox={`0 0 ${width} 8`}
-        preserveAspectRatio="none"
-        style={top ? { transform: [{ rotate: "180deg" }] } : undefined}
-      >
-        <Path d={d} fill={color} />
-      </Svg>
-    </View>
-  );
+/** Kept so older screens still compile; the new look has no torn-paper edges. */
+export function Zigzag(_: { color?: string; top?: boolean }) {
+  return null;
 }
-export function DottedLeader({ dark = false }: { dark?: boolean }) {
-  return (
-    <View style={{ flex: 1, minWidth: 8, alignSelf: "center" }}>
-      <Svg aria-hidden={true} focusable={false} height={2} width="100%">
-        <Line
-          x1="0"
-          y1="1"
-          x2="100%"
-          y2="1"
-          stroke={dark ? P.chalkLeader : P.lineStrong}
-          strokeWidth={1.5}
-          strokeDasharray="1 4"
-        />
-      </Svg>
-    </View>
-  );
+/** A flexible gap between a label and its value. */
+export function DottedLeader(_: { dark?: boolean }) {
+  return <View style={{ flex: 1, minWidth: 8 }} />;
 }
 export function Chip({
   label,
@@ -69,29 +34,19 @@ export function Chip({
         style={{
           minHeight: 36,
           justifyContent: "center",
-          paddingHorizontal: 12,
+          paddingHorizontal: 14,
           paddingVertical: 7,
-          borderRadius: shape.chip,
-          borderWidth: 1.5,
-          borderColor: dark ? P.chalkLine : P.lineStrong,
-          backgroundColor: selected
-            ? dark
-              ? P.chalkText
-              : P.chalk
-            : "transparent",
+          borderRadius: 999,
+          borderWidth: selected || dark ? 0 : 1,
+          borderColor: P.line,
+          backgroundColor: selected ? P.chalk : P.paper,
         }}
       >
         <Text
           style={{
             ...type.label,
             fontSize: 13,
-            color: selected
-              ? dark
-                ? P.chalk
-                : P.chalkText
-              : dark
-                ? P.chalkText
-                : P.ink,
+            color: selected ? P.chalkText : P.ink,
           }}
         >
           {label}
@@ -111,6 +66,47 @@ export function ChipRow({ children }: { children: React.ReactNode }) {
     </ScrollView>
   );
 }
+type Tone = "neutral" | "urgent" | "good" | "buyer" | "organizer";
+const tones: Record<Tone, { bg: string; fg: string }> = {
+  neutral: { bg: P.track, fg: P.ink },
+  urgent: { bg: "#FBE3E0", fg: P.beet },
+  good: { bg: brand.greenSoft, fg: brand.greenDeep },
+  buyer: { bg: brand.yellow, fg: P.ink },
+  organizer: { bg: brand.greenDark, fg: P.white },
+};
+/** Small rounded status label. */
+export function Badge({
+  children,
+  tone = "neutral",
+}: {
+  children: string;
+  tone?: Tone;
+}) {
+  const t = tones[tone];
+  return (
+    <View
+      style={{
+        alignSelf: "flex-start",
+        borderRadius: 999,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        backgroundColor: t.bg,
+      }}
+    >
+      <Text
+        style={{
+          fontFamily: fonts.label,
+          fontSize: 12,
+          lineHeight: 16,
+          color: t.fg,
+        }}
+      >
+        {children}
+      </Text>
+    </View>
+  );
+}
+/** Older name for Badge. */
 export function Stamp({
   children,
   urgent = false,
@@ -118,33 +114,7 @@ export function Stamp({
   children: string;
   urgent?: boolean;
 }) {
-  const color = urgent ? P.beet : P.chalk;
-  return (
-    <View
-      style={{
-        alignSelf: "flex-start",
-        borderWidth: 2,
-        borderStyle: "dashed",
-        borderColor: color,
-        borderRadius: 6,
-        paddingHorizontal: 9,
-        paddingVertical: 6,
-        transform: [{ rotate: "-3deg" }],
-      }}
-    >
-      <Text
-        style={{
-          fontFamily: fonts.bold,
-          fontSize: 12,
-          letterSpacing: 0.6,
-          textTransform: "uppercase",
-          color,
-        }}
-      >
-        {children}
-      </Text>
-    </View>
-  );
+  return <Badge tone={urgent ? "urgent" : "neutral"}>{children}</Badge>;
 }
 export function PriceTag({
   children,
@@ -153,39 +123,7 @@ export function PriceTag({
   children: string;
   spots?: boolean;
 }) {
-  return (
-    <View
-      style={{
-        ...shape.tag,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 8,
-        backgroundColor: spots ? P.herb : P.tag,
-        paddingVertical: 6,
-        paddingLeft: 8,
-        paddingRight: 12,
-        alignSelf: "flex-start",
-      }}
-    >
-      <View
-        style={{
-          height: 6,
-          width: 6,
-          borderRadius: 3,
-          backgroundColor: P.paper,
-        }}
-      />
-      <Text
-        style={{
-          ...type.mono,
-          color: spots ? P.white : P.ink,
-          fontFamily: spots ? fonts.bold : fonts.mono,
-        }}
-      >
-        {children}
-      </Text>
-    </View>
-  );
+  return <Badge tone={spots ? "good" : "buyer"}>{children}</Badge>;
 }
 export function ShareBar({
   others,
@@ -206,8 +144,8 @@ export function ShareBar({
       accessible
       accessibilityLabel={`${others} of ${total} ${unit} claimed by others, ${yours} by you`}
       style={{
-        height: 8,
-        borderRadius: 4,
+        height: 6,
+        borderRadius: 3,
         backgroundColor: P.track,
         overflow: "hidden",
         flexDirection: "row",
@@ -216,44 +154,54 @@ export function ShareBar({
       <View
         style={{ width: `${otherPct * 100}%`, backgroundColor: P.herbSoft }}
       />
-      <View style={{ width: `${minePct * 100}%`, backgroundColor: P.herb }} />
+      <View
+        style={{ width: `${minePct * 100}%`, backgroundColor: brand.orange }}
+      />
     </View>
   );
 }
+export const STATUS_TEXT: Record<Status, string> = {
+  draft: "Draft",
+  open: "Open",
+  locked: "Shares closed",
+  shopping: "Shopping",
+  ready: "Ready for pickup",
+  completed: "Done",
+  cancelled: "Cancelled",
+};
 export function StatusTrack({ status }: { status: Status }) {
   if (status === "draft" || status === "cancelled")
-    return <Stamp urgent={status === "cancelled"}>{status}</Stamp>;
-  const labels = [
-    "Open",
-    "Locked",
-    "Shopping",
-    status === "completed" ? "Done" : "Ready",
-  ];
+    return (
+      <Badge tone={status === "cancelled" ? "urgent" : "neutral"}>
+        {STATUS_TEXT[status]}
+      </Badge>
+    );
+  const labels = ["Open", "Closed", "Shopping", "Pickup"];
   const index =
     status === "completed"
-      ? 3
+      ? 4
       : ["open", "locked", "shopping", "ready"].indexOf(status);
   return (
     <View
       accessible
-      accessibilityLabel={`Group status: ${labels[index]}, step ${index + 1} of 4`}
-      style={{ flexDirection: "row", gap: 8 }}
+      accessibilityLabel={`Group status: ${STATUS_TEXT[status]}`}
+      style={{ flexDirection: "row", gap: 6 }}
     >
       {labels.map((label, i) => (
         <View key={label} style={{ flex: 1, gap: 6 }}>
           <View
             style={{
-              height: 6,
-              borderRadius: 3,
-              backgroundColor: i <= index ? P.herb : P.line,
+              height: 4,
+              borderRadius: 2,
+              backgroundColor: i <= index ? brand.greenDark : P.line,
             }}
           />
           <Text
             style={{
-              ...type.label,
-              fontSize: 13,
-              fontFamily: i === index ? fonts.bold : fonts.medium,
-              color: i === index ? P.herbText : P.muted,
+              ...type.mono,
+              fontSize: 12,
+              fontFamily: i === index ? fonts.label : fonts.mono,
+              color: i === index ? P.ink : P.muted,
             }}
           >
             {label}

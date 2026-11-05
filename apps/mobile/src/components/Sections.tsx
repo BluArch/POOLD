@@ -32,7 +32,7 @@ export function Collapsible({
       style={{
         borderWidth: 1,
         borderColor: P.line,
-        borderRadius: 10,
+        borderRadius: 18,
         backgroundColor: P.paper,
       }}
     >
@@ -52,7 +52,7 @@ export function Collapsible({
         })}
       >
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={type.section}>{title}</Text>
+          <Text style={type.item}>{title}</Text>
           {!!summary && <Text style={type.mono}>{summary}</Text>}
         </View>
         <Ionicons
@@ -116,12 +116,10 @@ export function QuantityStepper({
     >
       <View
         style={{
-          width: 40,
-          height: 40,
-          borderRadius: 20,
-          borderWidth: 1.5,
-          borderColor: P.lineStrong,
-          backgroundColor: icon === "add" ? P.chalk : P.paper,
+          width: 36,
+          height: 36,
+          borderRadius: 18,
+          backgroundColor: icon === "add" ? P.carrot : P.track,
           alignItems: "center",
           justifyContent: "center",
         }}
@@ -129,13 +127,13 @@ export function QuantityStepper({
         <Ionicons
           name={icon}
           size={20}
-          color={icon === "add" ? P.chalkText : P.ink}
+          color={icon === "add" ? P.white : P.ink}
         />
       </View>
     </Pressable>
   );
   return (
-    <View style={[styles.row, { gap: 10 }]}>
+    <View style={[styles.row, { gap: 4 }]}>
       {btn(
         "remove",
         Math.max(0, value - 1),
@@ -144,7 +142,7 @@ export function QuantityStepper({
       )}
       <Text
         accessibilityLabel={`${value} shares of ${label}`}
-        style={[styles.h3, { minWidth: 28, textAlign: "center" }]}
+        style={[styles.h3, { minWidth: 22, textAlign: "center" }]}
       >
         {value}
       </Text>

@@ -243,6 +243,9 @@ export interface Member {
   collectedAt: string | null;
   claims: Claim[];
   estimateCents: number;
+  /** Test-mode payment for this share; null until paid. No real money moves. */
+  paidCents: number | null;
+  paidAt: string | null;
 }
 export interface OrderView {
   order: OrderSummary;
@@ -254,6 +257,8 @@ export interface OrderView {
   inviteToken?: string;
   collectionCode?: string;
   isOrganizer: boolean;
+  /** How payments run: Stripe test checkout, or a built-in demo screen. */
+  payments: "stripe_test" | "demo";
 }
 export interface ProductRequest {
   id: string;
@@ -730,3 +735,21 @@ export const claimText = (
   i.unit && i.shareUnits
     ? `${quantity} share${quantity === 1 ? "" : "s"} = ${plural(quantity * i.shareUnits, i.unit)}`
     : `${quantity} share${quantity === 1 ? "" : "s"} × ${i.shareLabel}`;
+
+const emailField = z
+  .email({ error: "Enter a valid email address, like name@example.com." })
+  .max(254)
+  .transform((s) => s.toLowerCase());
+export const forgotPasswordInput = z.object({ email: emailField });
+export const resetPasswordInput = z.object({
+  email: emailField,
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, "Enter the six-digit code from your email."),
+  password: z
+    .string({ error: "Enter a password with at least 8 characters." })
+    .min(8, "Your password must be at least 8 characters long.")
+    .max(128, "Your password must be 128 characters or fewer."),
+  native: z.boolean().optional(),
+});

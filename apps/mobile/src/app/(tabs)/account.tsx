@@ -17,9 +17,12 @@ import {
   ResourceState,
 } from "../../components/ui";
 import { palette as P, type } from "../../theme";
+import { useRole } from "../../role";
+import { setPref } from "../../storage";
 type DevMail = { to: string; subject: string; text: string; createdAt: string };
 export default function Account() {
   const s = useSession(),
+    role = useRole(),
     a = useAction(),
     r = useResource<User>("/profile"),
     [name, setName] = useState(s.user?.name ?? ""),
@@ -35,7 +38,7 @@ export default function Account() {
   return (
     <Screen
       title="Profile"
-      subtitle={s.user?.email}
+      roleSwitch
       header={
         <View style={styles.row}>
           {photo ? (
@@ -50,12 +53,12 @@ export default function Account() {
                 width: 72,
                 height: 72,
                 borderRadius: 36,
-                backgroundColor: P.chalkTile,
+                backgroundColor: role.colors.accent,
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <Text style={[type.cardTitle, { color: P.chalkText }]}>
+              <Text style={[type.cardTitle, { color: P.white }]}>
                 {name
                   .split(" ")
                   .map((n) => n[0])
@@ -64,19 +67,22 @@ export default function Account() {
               </Text>
             </View>
           )}
-          <Text style={[type.cardTitle, { color: P.chalkText, flex: 1 }]}>
-            {s.user?.name}
-          </Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[type.cardTitle, { color: role.colors.headerText }]}>
+              {s.user?.name}
+            </Text>
+            <Text style={[type.mono, { color: role.colors.headerMuted }]}>
+              {s.user?.university ? "Verified UVic email" : "Verified email"} ·{" "}
+              {r.data?.completed ?? 0} completed
+            </Text>
+          </View>
         </View>
       }
     >
       <ResourceState resource={r} />
-      <View style={styles.section}>
-        <Text style={styles.text}>{s.user?.email}</Text>
-        <Text style={styles.muted}>
-          {s.user?.university ? "Verified UVic email" : "Verified email"} ·{" "}
-          {r.data?.completed ?? 0} completed orders
-        </Text>
+      <View style={styles.card}>
+        <Text style={styles.h2}>Your details</Text>
+        <Text style={styles.muted}>{s.user?.email}</Text>
         <Field label="Display name" value={name} onChangeText={setName} />
         <Button
           secondary
@@ -127,11 +133,10 @@ export default function Account() {
           Save profile
         </Button>
       </View>
-      <View style={styles.section}>
-        <Text style={styles.h2}>Order updates</Text>
+      <View style={styles.card}>
+        <Text style={styles.h2}>Notifications</Text>
         <Text style={styles.muted}>
-          Updates are always saved in the app. Push alerts are optional on
-          configured native builds.
+          Updates always show in the Updates tab.
         </Text>
         <Button
           secondary
@@ -140,7 +145,7 @@ export default function Account() {
             void a.run(async () => setMessage(await registerPush()))
           }
         >
-          Enable push on this device
+          Turn on push alerts
         </Button>
         <Button
           secondary
@@ -152,7 +157,7 @@ export default function Account() {
             })
           }
         >
-          Disable push on this device
+          Turn off push alerts
         </Button>
       </View>
       <ErrorText message={a.error} />
@@ -163,7 +168,15 @@ export default function Account() {
       )}
       <Button
         secondary
+        icon="sparkles-outline"
+        onPress={() => void setPref("poold.onboarded", "")}
+      >
+        Show the intro again
+      </Button>
+      <Button
+        secondary
         danger
+        icon="log-out-outline"
         disabled={a.busy}
         onPress={() =>
           void a.run(async () => {
@@ -177,11 +190,7 @@ export default function Account() {
       </Button>
       {s.demoEnabled && (
         <View style={styles.section}>
-          <Text style={styles.h3}>Local development email outbox</Text>
-          <Text style={styles.muted}>
-            These messages are saved locally. No external email is sent unless
-            SMTP is configured.
-          </Text>
+          <Text style={styles.h3}>Developer: email outbox</Text>
           <Button
             secondary
             onPress={() =>

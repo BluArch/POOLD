@@ -21,7 +21,8 @@
     "build": "npm run build -w @poold/contracts && npm run build -w @poold/api && npm run export -w @poold/mobile",
     "build:host": "npm run build -w @poold/contracts && npm run build -w @poold/api && npm run export:web -w @poold/mobile",
     "start:host": "npm run migrate:host -w @poold/api && npm run start:host -w @poold/api",
-    "prepare": "npm run build -w @poold/contracts"
+    "prepare": "npm run build -w @poold/contracts",
+    "phone": "node scripts/phone.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",

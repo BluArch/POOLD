@@ -1,3 +1,4 @@
+import { stripeKey } from "./payments.js";
 import type {
   OrderInput,
   OrderSummary,
@@ -186,6 +187,8 @@ export async function orderView(
       collectedAt: m.collected_at ? iso(m.collected_at) : null,
       claims,
       estimateCents: claims.reduce((n, c) => n + c.estimateCents, 0),
+      paidCents: m.paid_cents ?? null,
+      paidAt: m.paid_at ? iso(m.paid_at) : null,
     });
   }
   const ct = await first(
@@ -201,6 +204,7 @@ export async function orderView(
     mine: members.find((m) => m.userId === uid) ?? null,
     members: o.organizer_id === uid ? members : [],
     isOrganizer: o.organizer_id === uid,
+    payments: stripeKey() ? "stripe_test" : "demo",
     ...(o.organizer_id === uid ? { inviteToken: o.invite_token } : {}),
     ...(ct && o.status === "ready" ? { collectionCode: ct.code } : {}),
   };

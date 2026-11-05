@@ -8,6 +8,10 @@ type Glyph = React.ComponentProps<typeof MaterialCommunityIcons>["name"];
 const valid = (name: string): Glyph =>
   name in MaterialCommunityIcons.glyphMap ? (name as Glyph) : "basket-outline";
 const keywords: [RegExp, Glyph][] = [
+  [/soap|detergent|cleaner|dish/i, valid("spray-bottle")],
+  [/toothpaste|toothbrush/i, valid("toothbrush-paste")],
+  [/shampoo|lotion/i, valid("lotion")],
+  [/ziploc|bag|foil|wrap/i, valid("shopping-outline")],
   [/towel|toilet|tissue/i, valid("paper-roll")],
   [/rice/i, valid("rice")],
   [/pasta|noodle|penne|macaroni|dinner/i, valid("pasta")],
@@ -17,9 +21,6 @@ const keywords: [RegExp, Glyph][] = [
   [/chip|crisp|can|soup|beans|tomato/i, valid("food-variant")],
   [/cereal|oat/i, valid("bowl-mix")],
   [/milk/i, valid("cup")],
-  [/soap|detergent|cleaner/i, valid("spray-bottle")],
-  [/toothpaste|toothbrush/i, valid("toothbrush-paste")],
-  [/shampoo|lotion/i, valid("lotion")],
 ];
 const categories: Record<string, Glyph> = Object.fromEntries(
   Object.entries({
@@ -39,7 +40,7 @@ export function ItemIcon({
   receipt = false,
 }: {
   item: { name: string; category?: string };
-  size?: 22 | 26 | 48 | 52;
+  size?: 22 | 26 | 36 | 44 | 48 | 52;
   receipt?: boolean;
 }) {
   const colors = categoryColors[item.category ?? ""] ?? {
@@ -56,7 +57,7 @@ export function ItemIcon({
       style={{
         width: size,
         height: size,
-        borderRadius: size / 4,
+        borderRadius: size / 3,
         backgroundColor: receipt ? palette.chalkTile : colors.tile,
         alignItems: "center",
         justifyContent: "center",
