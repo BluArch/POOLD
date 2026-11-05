@@ -39,7 +39,7 @@ async function setup() {
   const register = async () => {
     const result = await call("/auth/register", {
       name: "OTP test",
-      email: `otp-${crypto.randomUUID()}@example.invalid`,
+      email: `otp-${crypto.randomUUID()}@uvic.ca`,
       password: "testing-code-flow",
       native: true,
     });

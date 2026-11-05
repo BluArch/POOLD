@@ -93,6 +93,7 @@ export function ReceiptPanel({
   items,
   quantity,
   total,
+  fee = 0,
   organizer,
   action,
   children,
@@ -100,6 +101,7 @@ export function ReceiptPanel({
   items: Item[];
   quantity: (id: string) => number;
   total: number;
+  fee?: number;
   organizer: string;
   action: React.ReactNode;
   children?: React.ReactNode;
@@ -122,11 +124,11 @@ export function ReceiptPanel({
         <View style={{ flex: 1 }}>
           <Text style={type.mono}>
             {shares
-              ? `${shares} ${shares === 1 ? "share" : "shares"} · paid to ${organizer.split(" ")[0]} up front`
+              ? `${shares} ${shares === 1 ? "share" : "shares"}${fee ? ` + ${money(fee)} fee (5%)` : ""} · paid to ${organizer.split(" ")[0]} up front`
               : "Tap + to add a share"}
           </Text>
           <Text accessibilityLiveRegion="polite" style={type.total}>
-            {money(total)}
+            {money(total + fee)}
           </Text>
         </View>
       </View>

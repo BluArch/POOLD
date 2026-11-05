@@ -2,7 +2,7 @@ import { Router } from "express";
 import type { Pool } from "mysql2/promise";
 import { claimsInput } from "@poold/contracts";
 import { first, rows, execute, transaction } from "./db.js";
-import { verified } from "./auth.js";
+import { verified, publicUser } from "./auth.js";
 import { getOrder } from "./order-model.js";
 import { fail } from "./errors.js";
 import { notify } from "./notifications.js";
@@ -48,6 +48,13 @@ export function claims(db: Pool) {
       );
       const positive = b.claims.some((i) => i.quantity > 0);
       if (positive && !existing) {
+        const me = await publicUser(c as any, req.user!.id);
+        if (me.blockedUntil)
+          fail(
+            403,
+            "NO_SHOW_BLOCK",
+            `You missed ${me.noShows} pickups recently, so you can’t join new groups until ${new Date(me.blockedUntil).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}.`,
+          );
         const count = await first(
           c,
           "SELECT COUNT(*) AS n FROM memberships WHERE order_id=?",

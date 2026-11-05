@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { Text, Pressable, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useLocalSearchParams, Redirect } from "expo-router";
+import { useLocalSearchParams, Redirect, router } from "expo-router";
+import { isUvicEmail } from "@poold/contracts";
 import { useSession } from "../session";
 import { post } from "../api";
 import EmailVerification from "../components/EmailVerification";
@@ -136,7 +137,7 @@ export default function Home() {
       subtitle={
         mode === "login"
           ? "Sign in to see your groups."
-          : "It takes a minute. Use your UVic email if you have one."
+          : "POOLD is for UVic students, so use your @uvic.ca email."
       }
       stamp={
         <Pressable
@@ -182,14 +183,20 @@ export default function Home() {
           <Field label="Display name" value={name} onChangeText={setName} />
         )}
         <Field
-          label="Email address"
+          label="UVic email"
           autoCapitalize="none"
           keyboardType="email-address"
           autoComplete="email"
           value={email}
           onChangeText={setEmail}
+          placeholder="you@uvic.ca"
           style={{ letterSpacing: 0 }}
         />
+        {!!email.trim() && email.includes("@") && !isUvicEmail(email) && (
+          <Text style={[styles.muted, { color: P.beet }]}>
+            POOLD is for UVic students. Use your @uvic.ca email.
+          </Text>
+        )}
         <View>
           <Field
             label="Password"
@@ -225,7 +232,17 @@ export default function Home() {
           </Pressable>
         </View>
         {mode === "register" ? (
-          <Text style={styles.muted}>At least 8 characters.</Text>
+          <Text style={styles.muted}>
+            At least 8 characters. By creating an account you agree to{" "}
+            <Text
+              accessibilityRole="link"
+              onPress={() => router.push("/policies")}
+              style={{ color: P.carrot, textDecorationLine: "underline" }}
+            >
+              how POOLD works
+            </Text>
+            .
+          </Text>
         ) : (
           <Pressable
             accessibilityRole="link"

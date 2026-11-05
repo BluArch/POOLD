@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, Share, Pressable } from "react-native";
+import { View, Text, Share, Pressable, Image } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import * as ExpoLinking from "expo-linking";
 import { router } from "expo-router";
@@ -23,6 +24,7 @@ import {
   useAction,
   useResource,
   when,
+  CurrencyField,
 } from "./ui";
 import { ItemIcon } from "./ItemIcon";
 import { ReceiptLine } from "./Receipt";
@@ -667,19 +669,26 @@ function ShopStep({
         />
       )}
       {!readOnly && shopping && (
-        <Advance
-          view={v}
-          to="ready"
-          label="Done shopping"
-          warning="Pickup opens and members get their codes."
-          refresh={refresh}
-          disabled={bought < needed.length}
-          blocker={
-            bought < needed.length
-              ? `${needed.length - bought} item${needed.length - bought === 1 ? "" : "s"} left to buy`
-              : undefined
-          }
-        />
+        <>
+          {bought === needed.length && (
+            <ProofUpload view={v} refresh={refresh} />
+          )}
+          <Advance
+            view={v}
+            to="ready"
+            label="Done shopping"
+            warning="Pickup opens and members get their codes. They’ll see your receipt and photo."
+            refresh={refresh}
+            disabled={bought < needed.length || !v.proof}
+            blocker={
+              bought < needed.length
+                ? `${needed.length - bought} item${needed.length - bought === 1 ? "" : "s"} left to buy`
+                : !v.proof
+                  ? "Upload the receipt and a photo of the items first."
+                  : undefined
+            }
+          />
+        </>
       )}
     </>
   );
@@ -811,7 +820,8 @@ function HandOutStep({
 }) {
   const o = v.order;
   const bags = bagsOf(v);
-  const collected = bags.filter((m) => m.collectedAt).length;
+  // A no-show counts as dealt with: the organizer keeps that bag.
+  const collected = bags.filter((m) => m.collectedAt || m.noShowAt).length;
   return (
     <>
       <StepHeader
@@ -875,13 +885,20 @@ function HandOutBag({
 }) {
   const a = useAction(),
     [code, setCode] = useState("");
+  const holdUntil = Date.parse(v.order.pickupEnd) + 24 * 3600000;
+  const missed = Date.now() > Date.parse(v.order.pickupEnd);
+  const [confirmNoShow, setConfirmNoShow] = useState(false);
   const status = m.collectedAt
     ? `Collected · ${when(m.collectedAt)}`
-    : m.arrived
-      ? "Here now · waiting for handoff"
-      : m.attending
-        ? "Not here yet"
-        : "Not here yet · pickup not confirmed";
+    : m.noShowAt
+      ? "No-show · bag and payment are yours"
+      : missed
+        ? "Missed pickup · holding the bag"
+        : m.arrived
+          ? "Here now · waiting for handoff"
+          : m.attending
+            ? "Not here yet"
+            : "Not here yet · pickup not confirmed";
   return (
     <Collapsible
       title={m.name}
@@ -923,6 +940,8 @@ function HandOutBag({
       <Text style={styles.muted}>{money(m.estimateCents)} estimated</Text>
       {m.collectedAt ? (
         <Badge tone="good">Handed out</Badge>
+      ) : m.noShowAt ? (
+        <Badge tone="urgent">No-show</Badge>
       ) : (
         !readOnly && (
           <>
@@ -949,6 +968,56 @@ function HandOutBag({
             >
               Confirm handoff
             </Button>
+            {missed && m.userId !== v.order.organizerId && (
+              <View style={[styles.note, { gap: 8 }]}>
+                {Date.now() < holdUntil ? (
+                  <Text style={styles.text}>
+                    {m.name.split(" ")[0]} missed the pickup window. Hold their
+                    bag until {when(new Date(holdUntil).toISOString())} in case
+                    they come late. After that you can mark a no-show.
+                  </Text>
+                ) : confirmNoShow ? (
+                  <>
+                    <Text style={styles.text}>
+                      Mark {m.name.split(" ")[0]} as a no-show? You keep the
+                      items and their payment, and they get a no-show mark.
+                    </Text>
+                    <Button
+                      danger
+                      disabled={a.busy}
+                      onPress={() =>
+                        void a.run(async () => {
+                          await post(`/orders/${v.order.id}/no-show`, {
+                            userId: m.userId,
+                          });
+                          await refresh();
+                        })
+                      }
+                    >
+                      Yes, mark no-show
+                    </Button>
+                    <Button secondary onPress={() => setConfirmNoShow(false)}>
+                      Not yet
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    secondary
+                    danger
+                    onPress={() => setConfirmNoShow(true)}
+                  >
+                    Mark as no-show
+                  </Button>
+                )}
+                <Text
+                  accessibilityRole="link"
+                  onPress={() => router.push("/policies")}
+                  style={[type.label, { color: P.carrot, fontSize: 13 }]}
+                >
+                  No-show policy
+                </Text>
+              </View>
+            )}
           </>
         )
       )}
@@ -1037,30 +1106,58 @@ function Celebrate({
 
 /** Money members have paid in, so the organizer knows what they can spend. */
 function MoneyCard({ view: v }: { view: OrderView }) {
-  const buyers = v.members.filter(
-    (m) => m.userId !== v.order.organizerId && m.estimateCents > 0,
-  );
-  const paid = buyers.reduce(
-    (n, m) => n + Math.min(m.paidCents, m.estimateCents),
+  const members = v.members.filter((m) => m.estimateCents > 0);
+  const expected = members.reduce(
+    (n, m) => n + m.estimateCents + m.feeCents,
     0,
   );
-  const expected = buyers.reduce((n, m) => n + m.estimateCents, 0);
-  const unpaid = buyers.filter((m) => m.dueCents > 0).length;
+  const unpaid = members.filter((m) => m.paidCents <= 0).length;
+  const p = v.payouts;
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, { gap: 10 }]}>
       <View style={styles.between}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.text}>Money collected</Text>
-          <Text style={type.mono}>Your budget for the shopping trip</Text>
+          <Text style={type.mono}>
+            Held safely by POOLD until it’s released
+          </Text>
         </View>
         <Text style={styles.h3}>
-          {money(paid)} of {money(expected)}
+          {money(p?.collectedCents ?? 0)} of {money(expected)}
         </Text>
       </View>
-      <ProgressBar value={paid} total={Math.max(expected, 1)} />
-      {unpaid > 0 && (
+      <ProgressBar
+        value={p?.collectedCents ?? 0}
+        total={Math.max(expected, 1)}
+      />
+      {p && (
+        <View style={{ gap: 6 }}>
+          <View style={styles.between}>
+            <Text style={type.mono}>Released to you</Text>
+            <Text style={[type.label, { color: brand.greenDeep }]}>
+              {money(p.releasedCents)}
+            </Text>
+          </View>
+          <View style={styles.between}>
+            <Text style={type.mono}>
+              Still held
+              {p.releasedCents ? " (service fees, after hand-out)" : ""}
+            </Text>
+            <Text style={type.label}>{money(p.heldCents)}</Text>
+          </View>
+          <Text style={[type.mono, { fontSize: 12 }]}>
+            {v.order.status === "open" || v.order.status === "locked"
+              ? "The item money is released when you start shopping. The 5% service fees come after every bag is handed out."
+              : p.heldCents > 0
+                ? "The 5% service fees are released after every bag is handed out."
+                : "Everything has been released. Test mode, no real money."}
+          </Text>
+        </View>
+      )}
+      {unpaid > 0 && ["open", "locked"].includes(v.order.status) && (
         <Text style={[type.mono, { color: P.beet }]}>
-          {unpaid} {unpaid === 1 ? "person hasn’t" : "people haven’t"} paid yet
+          {unpaid} {unpaid === 1 ? "person hasn’t" : "people haven’t"} paid.
+          Unpaid shares are dropped when shares close.
         </Text>
       )}
     </View>
@@ -1236,6 +1333,171 @@ function RepeatOrder({ orderId }: { orderId: string }) {
         }
       >
         Create repeat draft
+      </Button>
+    </View>
+  );
+}
+
+/** Pick a photo and return it as a small data URL. */
+async function pickPhoto(camera: boolean) {
+  const options = {
+    mediaTypes: ["images"] as ImagePicker.MediaType[],
+    quality: 0.35,
+    base64: true,
+  };
+  const result = camera
+    ? await ImagePicker.launchCameraAsync(options).catch(() =>
+        ImagePicker.launchImageLibraryAsync(options),
+      )
+    : await ImagePicker.launchImageLibraryAsync(options);
+  if (result.canceled) return null;
+  const asset = result.assets[0];
+  if (!asset.base64) throw new Error("Couldn’t read that photo. Try another.");
+  const data = `data:${asset.mimeType ?? "image/jpeg"};base64,${asset.base64}`;
+  if (data.length > 1_400_000)
+    throw new Error("That photo is too large. Try a closer or smaller one.");
+  return data;
+}
+
+/** Proof of purchase: the full receipt and a photo of what was bought. */
+function ProofUpload({
+  view: v,
+  refresh,
+}: {
+  view: OrderView;
+  refresh: () => Promise<void>;
+}) {
+  const a = useAction();
+  const [receipt, setReceipt] = useState(v.proof?.receiptPhoto ?? ""),
+    [items, setItems] = useState(v.proof?.itemsPhoto ?? ""),
+    [total, setTotal] = useState<number | null>(
+      v.proof?.receiptTotalCents ?? null,
+    );
+  const collected = v.payouts?.collectedCents ?? 0;
+  const slot = (
+    label: string,
+    hint: string,
+    value: string,
+    set: (s: string) => void,
+  ) => (
+    <View style={{ gap: 8 }}>
+      <Text style={styles.label}>{label}</Text>
+      {value ? (
+        <Image
+          source={{ uri: value }}
+          accessibilityLabel={label}
+          style={{
+            width: "100%",
+            height: 180,
+            borderRadius: 12,
+            backgroundColor: P.track,
+          }}
+          resizeMode="cover"
+        />
+      ) : (
+        <View
+          style={{
+            height: 110,
+            borderRadius: 12,
+            borderWidth: 1.5,
+            borderStyle: "dashed",
+            borderColor: P.lineStrong,
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 4,
+          }}
+        >
+          <Ionicons name="camera-outline" size={26} color={P.muted} />
+          <Text style={type.mono}>{hint}</Text>
+        </View>
+      )}
+      <View style={[styles.row, { gap: 8 }]}>
+        <View style={{ flex: 1 }}>
+          <Button
+            secondary
+            icon="camera-outline"
+            disabled={a.busy}
+            onPress={() =>
+              void a.run(async () => {
+                const d = await pickPhoto(true);
+                if (d) set(d);
+              })
+            }
+          >
+            Take photo
+          </Button>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Button
+            secondary
+            icon="image-outline"
+            disabled={a.busy}
+            onPress={() =>
+              void a.run(async () => {
+                const d = await pickPhoto(false);
+                if (d) set(d);
+              })
+            }
+          >
+            Choose
+          </Button>
+        </View>
+      </View>
+    </View>
+  );
+  return (
+    <View style={[styles.card, { gap: 14 }]}>
+      <View style={styles.between}>
+        <Text style={styles.h2}>Proof of purchase</Text>
+        {v.proof ? (
+          <Badge tone="good">Uploaded</Badge>
+        ) : (
+          <Badge tone="urgent">Required</Badge>
+        )}
+      </View>
+      <Text style={styles.muted}>
+        Members see these so everyone knows what was spent.
+      </Text>
+      {slot(
+        "Full receipt",
+        "Show the whole receipt with the total",
+        receipt,
+        setReceipt,
+      )}
+      {slot(
+        "Photo of the items",
+        "Everything you bought, together",
+        items,
+        setItems,
+      )}
+      <CurrencyField
+        label="Receipt total (CAD)"
+        valueCents={total}
+        onChangeCents={setTotal}
+      />
+      {!!total && collected > 0 && (
+        <Text style={type.mono}>
+          Members paid {money(collected)} including fees.
+          {total > collected
+            ? " The receipt is higher than what was collected."
+            : ""}
+        </Text>
+      )}
+      <ErrorText message={a.error} />
+      <Button
+        disabled={a.busy || !receipt || !items || !total}
+        onPress={() =>
+          void a.run(async () => {
+            await post(`/orders/${v.order.id}/proof`, {
+              receiptPhoto: receipt,
+              itemsPhoto: items,
+              receiptTotalCents: total,
+            });
+            await refresh();
+          })
+        }
+      >
+        {a.busy ? "Uploading…" : v.proof ? "Update proof" : "Upload proof"}
       </Button>
     </View>
   );

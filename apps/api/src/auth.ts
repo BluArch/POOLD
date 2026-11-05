@@ -12,11 +12,13 @@ import {
   emailCodeInput,
   loginInput,
   profileInput,
+  isUvicEmail,
   forgotPasswordInput,
   resetPasswordInput,
   type User,
 } from "@poold/contracts";
 import { first, execute } from "./db.js";
+import { organizerRating } from "./order-model.js";
 import { fail } from "./errors.js";
 import { id, token, hash, passwordHash, passwordMatches } from "./security.js";
 import type { MailSender } from "./mail.js";
@@ -38,6 +40,16 @@ export async function publicUser(db: Pool, uid: string): Promise<User> {
     `SELECT u.*,(SELECT COUNT(*) FROM memberships m JOIN orders o ON o.id=m.order_id WHERE m.user_id=u.id AND (m.collected_at IS NOT NULL OR o.organizer_id=u.id) AND o.status='completed') AS completed FROM users u WHERE u.id=?`,
     [uid],
   );
+  const marks = await first(
+    db,
+    "SELECT COUNT(*) AS n, MAX(created_at) AS last FROM no_shows WHERE user_id=? AND created_at > UTC_TIMESTAMP(3) - INTERVAL 90 DAY",
+    [uid],
+  );
+  const noShows = Number(marks.n);
+  const until =
+    noShows >= NO_SHOW_LIMIT && marks.last
+      ? new Date(new Date(marks.last).getTime() + 30 * 86400000)
+      : null;
   return {
     id: u.id,
     name: u.name,
@@ -47,8 +59,20 @@ export async function publicUser(db: Pool, uid: string): Promise<User> {
     photo: u.photo,
     demo: !!u.demo,
     completed: Number(u.completed),
+    rating: await organizerRating(db, uid),
+    noShows,
+    blockedUntil:
+      until && until.getTime() > Date.now() ? until.toISOString() : null,
   };
 }
+/** Missed pickups in 90 days that block joining for 30 days. */
+export const NO_SHOW_LIMIT = 3;
+
+/** POOLD is UVic-only. Seeded demo accounts work locally, never in production. */
+export const allowedEmail = (email: string, production: boolean) =>
+  isUvicEmail(email) ||
+  (!production && email.toLowerCase().endsWith("@demo.poold.invalid"));
+
 export const requireUser: RequestHandler = (req, _res, next) => {
   if (!req.user) fail(401, "SIGN_IN", "Please sign in to continue.");
   next();
@@ -197,8 +221,14 @@ export function auth(
     },
   );
   router.post("/auth/login", ...limit, async (req, res) => {
-    const b = loginInput.parse(req.body),
-      u = await first(db, "SELECT * FROM users WHERE email=?", [b.email]);
+    const b = loginInput.parse(req.body);
+    if (!allowedEmail(b.email, options.production))
+      fail(
+        403,
+        "UVIC_ONLY",
+        "POOLD is for UVic students. Sign in with your @uvic.ca email.",
+      );
+    const u = await first(db, "SELECT * FROM users WHERE email=?", [b.email]);
     const encoded = u?.password_hash ?? (await passwordHash("dummy-password"));
     const matches = await passwordMatches(b.password, encoded);
     if (!u || !matches || (options.production && u.demo))

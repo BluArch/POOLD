@@ -4,13 +4,19 @@ import type { Pool } from "mysql2/promise";
 import { z } from "zod";
 import { rateLimit } from "express-rate-limit";
 import { verified } from "./auth.js";
-import { rows, first, execute, transaction } from "./db.js";
+import { rows, first, execute, transaction, type DB } from "./db.js";
 import { getOrder, owner, insertDraft } from "./order-model.js";
 import { fail, RATE_LIMIT_ERROR } from "./errors.js";
 import { notify, notifyMembers } from "./notifications.js";
 import { hash, id } from "./security.js";
 import { orderInput } from "@poold/contracts";
-import { settleAll } from "./payments.js";
+import {
+  settleAll,
+  dropUnpaid,
+  releaseShoppingMoney,
+  releaseRemaining,
+} from "./payments.js";
+import { proofInput, ratingInput } from "@poold/contracts";
 const deliverableSql = `SELECT m.* FROM memberships m WHERE m.order_id=? AND EXISTS(SELECT 1 FROM share_claims c JOIN order_items i ON i.id=c.item_id WHERE c.user_id=m.user_id AND i.order_id=m.order_id AND i.available=TRUE AND c.quantity>0)`;
 export function fulfillment(db: Pool) {
   const r = Router();
@@ -41,6 +47,21 @@ export function fulfillment(db: Pool) {
         ]);
       } else if (next[o.status] !== status)
         fail(409, "INVALID_TRANSITION", "Follow the order steps in sequence.");
+      // Closing shares: anyone who hasn't paid loses their shares.
+      if (status === "locked") await dropUnpaid(c, o);
+      if (
+        status === "ready" &&
+        !(await first(
+          c,
+          "SELECT order_id FROM shopping_proofs WHERE order_id=?",
+          [o.id],
+        ))
+      )
+        fail(
+          409,
+          "PROOF_REQUIRED",
+          "Upload the receipt and a photo of the items before pickup opens.",
+        );
       const its = await rows(
         c,
         `SELECT i.*,COALESCE((SELECT SUM(quantity) FROM share_claims WHERE item_id=i.id),0) AS claimed FROM order_items i WHERE order_id=?`,
@@ -96,7 +117,8 @@ export function fulfillment(db: Pool) {
       }
       if (
         status === "completed" &&
-        (!members.length || members.some((m) => !m.collected_at))
+        (!members.length ||
+          members.some((m) => !m.collected_at && !m.no_show_at))
       )
         fail(
           409,
@@ -104,6 +126,8 @@ export function fulfillment(db: Pool) {
           "Confirm every required collection before completing the order.",
         );
       await execute(c, "UPDATE orders SET status=? WHERE id=?", [status, o.id]);
+      if (status === "shopping") await releaseShoppingMoney(c, o);
+      if (status === "completed") await releaseRemaining(c, o);
       if (status === "cancelled")
         await settleAll(c, o, "the group was cancelled", true);
       // A cancelled group frees its wishlist for another organizer.
@@ -379,6 +403,91 @@ export function fulfillment(db: Pool) {
       res.json({ ok: true });
     },
   );
+  // Proof of purchase: the full receipt and a photo of the items, uploaded
+  // when shopping is done. Every member can see them.
+  r.post("/orders/:id/proof", verified, async (req, res) => {
+    const b = proofInput.parse(req.body);
+    await transaction(db, async (c) => {
+      const o = await getOrder(
+        c,
+        req.params.id as string,
+        req.user!.id,
+        undefined,
+        true,
+      );
+      owner(o, req.user!.id);
+      if (o.status !== "shopping")
+        fail(
+          409,
+          "NOT_SHOPPING",
+          "Upload proof while you’re shopping, before pickup opens.",
+        );
+      await execute(
+        c,
+        "INSERT INTO shopping_proofs(order_id,receipt_photo,items_photo,receipt_total_cents) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE receipt_photo=VALUES(receipt_photo),items_photo=VALUES(items_photo),receipt_total_cents=VALUES(receipt_total_cents),uploaded_at=UTC_TIMESTAMP(3)",
+        [o.id, b.receiptPhoto, b.itemsPhoto, b.receiptTotalCents],
+      );
+    });
+    res.json({ ok: true });
+  });
+  // No-show: once the 24-hour grace period after pickup has passed, the
+  // organizer keeps the bag and the buyer's payment, and the buyer gets a mark.
+  r.post("/orders/:id/no-show", verified, async (req, res) => {
+    const userId = z.string().min(1).max(36).parse(req.body.userId);
+    await transaction(db, async (c) => {
+      const o = await getOrder(
+        c,
+        req.params.id as string,
+        req.user!.id,
+        undefined,
+        true,
+      );
+      owner(o, req.user!.id);
+      if (o.status !== "ready")
+        fail(409, "NOT_READY", "No-shows can only be marked during pickup.");
+      if (new Date(o.pickup_end).getTime() + GRACE_MS > Date.now())
+        fail(
+          409,
+          "GRACE_PERIOD",
+          "Hold the bag for 24 hours after pickup ends. You can mark a no-show after that.",
+        );
+      await markNoShow(c, o, userId);
+    });
+    res.json({ ok: true });
+  });
+  // Buyers rate the organizer once they've picked up their bag.
+  r.post("/orders/:id/rating", verified, async (req, res) => {
+    const b = ratingInput.parse(req.body);
+    await transaction(db, async (c) => {
+      const o = await getOrder(c, req.params.id as string, req.user!.id);
+      if (o.organizer_id === req.user!.id)
+        fail(409, "ORGANIZER", "You can’t rate your own group.");
+      const m = await first(
+        c,
+        "SELECT collected_at FROM memberships WHERE order_id=? AND user_id=?",
+        [o.id, req.user!.id],
+      );
+      if (!m?.collected_at)
+        fail(
+          409,
+          "NOT_COLLECTED",
+          "You can rate the organizer after you pick up your bag.",
+        );
+      await execute(
+        c,
+        "INSERT INTO ratings(order_id,buyer_id,organizer_id,stars,comment) VALUES(?,?,?,?,?) ON DUPLICATE KEY UPDATE stars=VALUES(stars),comment=VALUES(comment)",
+        [o.id, req.user!.id, o.organizer_id, b.stars, b.comment],
+      );
+      await notify(
+        c,
+        o.organizer_id,
+        o.id,
+        `${req.user!.name} rated your ${o.name} run ${"★".repeat(b.stars)}${b.comment ? `: “${b.comment}”` : ""}`,
+        `rating:${o.id}:${req.user!.id}`,
+      );
+    });
+    res.json({ ok: true });
+  });
   r.post("/orders/:id/repeat", verified, async (req, res) => {
     const dates = z
       .object({
@@ -436,4 +545,42 @@ export function fulfillment(db: Pool) {
     res.status(201).json({ id: oid });
   });
   return r;
+}
+
+export const GRACE_MS = 24 * 3600000;
+
+/** Record a buyer no-show: they forfeit the bag and their payment. */
+export async function markNoShow(
+  c: DB,
+  o: { id: string; name: string; organizer_id: string },
+  userId: string,
+) {
+  const m = await first(
+    c,
+    "SELECT * FROM memberships WHERE order_id=? AND user_id=? FOR UPDATE",
+    [o.id, userId],
+  );
+  if (!m || m.collected_at || m.no_show_at || userId === o.organizer_id) return;
+  await execute(
+    c,
+    "UPDATE memberships SET no_show_at=UTC_TIMESTAMP(3) WHERE order_id=? AND user_id=?",
+    [o.id, userId],
+  );
+  await execute(
+    c,
+    "UPDATE collection_tokens SET used_at=UTC_TIMESTAMP(3) WHERE order_id=? AND user_id=? AND used_at IS NULL",
+    [o.id, userId],
+  );
+  await execute(
+    c,
+    "INSERT IGNORE INTO no_shows(id,user_id,order_id,role) VALUES(?,?,?,'buyer')",
+    [id(), userId, o.id],
+  );
+  await notify(
+    c,
+    userId,
+    o.id,
+    `${o.name}: you missed pickup and the 24-hour hold ended. Your bag and payment go to the organizer, and a no-show was added to your account.`,
+    `no-show:${o.id}:${userId}`,
+  );
 }

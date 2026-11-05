@@ -17,6 +17,11 @@ test("Phase D: lock, resolve shortfall, shop, pack, collect once, complete and r
       { revision: 1, attending: true, claims: [{ itemId: iid, quantity: 2 }] },
       t.jordan,
     );
+    // Buyers pay up front; unpaid shares would be dropped at close.
+    assert.equal(
+      (await call(`/orders/${id}/pay/demo`, "POST", {}, t.jordan)).status,
+      200,
+    );
     const status = (status: string, auth = t.maya) =>
       call(`/orders/${id}/status`, "POST", { status }, auth);
     const change = (body: unknown, auth = t.maya) =>
@@ -40,6 +45,20 @@ test("Phase D: lock, resolve shortfall, shop, pack, collect once, complete and r
       409,
     );
     await change({ bought: true });
+    // Pickup can't open until the receipt and items photo are uploaded.
+    assert.equal((await status("ready")).body.error.code, "PROOF_REQUIRED");
+    const photo = "data:image/png;base64,iVBORw0KGgo=";
+    assert.equal(
+      (
+        await call(
+          `/orders/${id}/proof`,
+          "POST",
+          { receiptPhoto: photo, itemsPhoto: photo, receiptTotalCents: 1199 },
+          t.maya,
+        )
+      ).status,
+      200,
+    );
     // No separate packing step: "Done shopping" opens pickup directly.
     assert.equal((await status("ready")).status, 200);
     v = await view();
@@ -95,7 +114,46 @@ test("Phase D: lock, resolve shortfall, shop, pack, collect once, complete and r
       ),
     ]);
     assert.deepEqual(cs.map((r) => r.status).sort(), [200, 409]);
+    // No-shows can only be marked after the 24-hour hold.
+    assert.equal(
+      (
+        await call(
+          `/orders/${id}/no-show`,
+          "POST",
+          { userId: "demo-jordan" },
+          t.maya,
+        )
+      ).body.error.code,
+      "GRACE_PERIOD",
+    );
+    // Shopping money was released; the 5% fee is still held.
+    let org = await view();
+    assert.ok(org.payouts.releasedCents > 0);
+    assert.ok(org.payouts.heldCents > 0);
     assert.equal((await status("completed")).status, 200);
+    org = await view();
+    assert.equal(org.payouts.heldCents, 0);
+    assert.equal(org.payouts.releasedCents, org.payouts.collectedCents);
+    // The buyer rates the organizer; it shows on the organizer's profile.
+    assert.equal((await view(t.jordan)).canRate, true);
+    assert.equal(
+      (
+        await call(
+          `/orders/${id}/rating`,
+          "POST",
+          { stars: 5, comment: "Smooth pickup" },
+          t.jordan,
+        )
+      ).status,
+      200,
+    );
+    assert.equal((await view(t.jordan)).myRating, 5);
+    assert.equal(
+      (await call(`/orders/${id}/rating`, "POST", { stars: 4 }, t.maya)).status,
+      409,
+    );
+    const mayaProfile = (await call("/profile", "GET", undefined, t.maya)).body;
+    assert.ok(mayaProfile.rating.count >= 1);
     const profile = (await call("/profile", "GET", undefined, t.jordan)).body;
     assert.ok(profile.completed >= 1);
     assert.ok(

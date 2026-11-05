@@ -82,6 +82,45 @@ export default function Account() {
       }
     >
       <ResourceState resource={r} />
+      {!!r.data?.blockedUntil && (
+        <View
+          style={[styles.card, { borderWidth: 1.5, borderColor: "#E7B8B3" }]}
+        >
+          <Text style={styles.h3}>You can’t join new groups right now</Text>
+          <Text style={styles.text}>
+            You missed {r.data.noShows} pickups in the last 90 days. You can
+            join again on{" "}
+            {new Date(r.data.blockedUntil).toLocaleDateString("en-CA", {
+              month: "short",
+              day: "numeric",
+            })}
+            .
+          </Text>
+        </View>
+      )}
+      <View style={[styles.row, { gap: 8 }]}>
+        <StatTile
+          label="Organizer rating"
+          value={
+            r.data?.rating ? `★ ${r.data.rating.average.toFixed(1)}` : "New"
+          }
+          detail={
+            r.data?.rating
+              ? `${r.data.rating.count} rating${r.data.rating.count === 1 ? "" : "s"}`
+              : "No ratings yet"
+          }
+        />
+        <StatTile
+          label="Completed"
+          value={String(r.data?.completed ?? 0)}
+          detail="groups"
+        />
+        <StatTile
+          label="No-shows"
+          value={String(r.data?.noShows ?? 0)}
+          detail="last 90 days"
+        />
+      </View>
       <View style={styles.card}>
         <Text style={styles.h2}>Your details</Text>
         <Text style={styles.muted}>{s.user?.email}</Text>
@@ -170,6 +209,13 @@ export default function Account() {
       )}
       <Button
         secondary
+        icon="document-text-outline"
+        onPress={() => router.push("/policies")}
+      >
+        Payments, refunds and no-shows
+      </Button>
+      <Button
+        secondary
         icon="sparkles-outline"
         onPress={() => {
           role.setRole("buying");
@@ -227,5 +273,25 @@ export default function Account() {
         </View>
       )}
     </Screen>
+  );
+}
+
+function StatTile({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <View style={[styles.card, { flex: 1, gap: 2, padding: 12 }]}>
+      <Text style={[type.mono, { fontSize: 12 }]}>{label}</Text>
+      <Text style={[type.total, { fontSize: 22, lineHeight: 28 }]}>
+        {value}
+      </Text>
+      <Text style={[type.mono, { fontSize: 11 }]}>{detail}</Text>
+    </View>
   );
 }

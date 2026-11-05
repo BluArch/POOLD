@@ -298,14 +298,21 @@ export default function Pay() {
                       </View>
                     ))}
                   <Divider />
-                  <Row label="Subtotal" value={money(v.myEstimateCents)} />
+                  <Row label="Your shares" value={money(v.myEstimateCents)} />
+                  <Row
+                    label={
+                      v.isOrganizer
+                        ? "Service fee (none for organizers)"
+                        : "Service fee (5%, held until hand-out)"
+                    }
+                    value={money(v.myFeeCents)}
+                  />
                   {(v.mine?.paidCents ?? 0) > 0 && (
                     <Row
                       label="Already paid"
                       value={`−${money(v.mine!.paidCents)}`}
                     />
                   )}
-                  <Row label="POOLD fee" value={money(0)} />
                   <Divider />
                   <Row label="Total due" value={money(amount)} bold />
                 </View>
@@ -669,8 +676,9 @@ function Success({
             Payment successful
           </Text>
           <Text style={[styles.muted, { textAlign: "center" }]}>
-            {v.order.organizerName.split(" ")[0]} has your money for the
-            shopping trip.
+            {v.isOrganizer
+              ? "Your own share is paid in, so the receipt covers everything."
+              : `${v.order.organizerName.split(" ")[0]} has your money for the shopping trip.`}
           </Text>
         </View>
         <View

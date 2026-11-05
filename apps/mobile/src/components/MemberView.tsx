@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, Linking, Platform } from "react-native";
+import { View, Text, Linking, Platform, Pressable, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import {
@@ -8,10 +8,12 @@ import {
   type ProductRequest,
   money,
   describeShare,
+  feeFor,
 } from "@poold/contracts";
 import { api, post } from "../api";
 import {
   Button,
+  Field,
   Check,
   styles,
   ErrorText,
@@ -73,10 +75,19 @@ export function MemberView({
 
       {!canChange && !hasShares && <ItemsReadOnly items={v.items} />}
 
-      {hasShares && <PayShare view={v} />}
+      {hasShares && !v.mine?.noShowAt && <PayShare view={v} />}
 
-      {v.mine?.collectedAt ? (
-        <PickedUp view={v} />
+      {v.proof && <ProofCard view={v} />}
+
+      {v.mine?.noShowAt ? (
+        <MissedPickup view={v} />
+      ) : v.mine?.collectedAt ? (
+        <>
+          <PickedUp view={v} />
+          {(v.canRate || v.myRating !== null) && (
+            <RateOrganizer view={v} refresh={refresh} />
+          )}
+        </>
       ) : (
         (hasShares || !canChange) && (
           <PickupDetails view={v} refresh={refresh} />
@@ -140,6 +151,181 @@ function PickedUp({ view: v }: { view: OrderView }) {
         )}
       </View>
       {o.status === "completed" && <Badge tone="good">Group complete</Badge>}
+    </View>
+  );
+}
+
+/** Buyers rate the organizer once they have their bag. */
+function RateOrganizer({
+  view: v,
+  refresh,
+}: {
+  view: OrderView;
+  refresh: () => Promise<void>;
+}) {
+  const a = useAction();
+  const [stars, setStars] = useState(v.myRating ?? 0),
+    [comment, setComment] = useState("");
+  const first = v.order.organizerName.split(" ")[0];
+  if (v.myRating !== null)
+    return (
+      <View style={[styles.card, styles.row]}>
+        <Text style={[styles.text, { flex: 1 }]}>You rated {first}</Text>
+        <Stars value={v.myRating} />
+      </View>
+    );
+  return (
+    <View style={[styles.card, { gap: 12, alignItems: "center" }]}>
+      <Text style={styles.h2}>How was {first} as an organizer?</Text>
+      <Stars value={stars} onChange={setStars} size={34} />
+      <View style={{ alignSelf: "stretch" }}>
+        <Field
+          label="Anything to add? (optional)"
+          value={comment}
+          onChangeText={setComment}
+          placeholder="On time, well packed…"
+        />
+      </View>
+      <ErrorText message={a.error} />
+      <View style={{ alignSelf: "stretch" }}>
+        <Button
+          disabled={a.busy || stars === 0}
+          onPress={() =>
+            void a.run(async () => {
+              await post(`/orders/${v.order.id}/rating`, { stars, comment });
+              await refresh();
+            })
+          }
+        >
+          {stars ? `Send ${stars}-star rating` : "Tap a star to rate"}
+        </Button>
+      </View>
+    </View>
+  );
+}
+
+/** Star row; tappable when onChange is given. */
+export function Stars({
+  value,
+  onChange,
+  size = 18,
+}: {
+  value: number;
+  onChange?: (n: number) => void;
+  size?: number;
+}) {
+  return (
+    <View style={[styles.row, { gap: size > 20 ? 8 : 2 }]}>
+      {[1, 2, 3, 4, 5].map((n) => {
+        const icon = (
+          <Ionicons
+            name={n <= Math.round(value) ? "star" : "star-outline"}
+            size={size}
+            color={n <= Math.round(value) ? "#E8A317" : P.lineStrong}
+          />
+        );
+        return onChange ? (
+          <Pressable
+            key={n}
+            accessibilityRole="button"
+            accessibilityLabel={`${n} star${n === 1 ? "" : "s"}`}
+            accessibilityState={{ selected: n <= value }}
+            onPress={() => onChange(n)}
+            hitSlop={4}
+          >
+            {icon}
+          </Pressable>
+        ) : (
+          <View key={n}>{icon}</View>
+        );
+      })}
+    </View>
+  );
+}
+
+/** Receipt and items photo the organizer uploaded after shopping. */
+function ProofCard({ view: v }: { view: OrderView }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const p = v.proof!;
+  return (
+    <View style={[styles.card, { gap: 10 }]}>
+      <View style={styles.between}>
+        <Text style={styles.h2}>Proof of purchase</Text>
+        <Badge tone="good">{`Receipt ${money(p.receiptTotalCents)}`}</Badge>
+      </View>
+      <Text style={type.mono}>
+        Uploaded by {v.order.organizerName.split(" ")[0]} {when(p.uploadedAt)}
+      </Text>
+      <View style={[styles.row, { gap: 10 }]}>
+        {[
+          ["Receipt", p.receiptPhoto],
+          ["Items", p.itemsPhoto],
+        ].map(([label, uri]) => (
+          <Pressable
+            key={label}
+            accessibilityRole="button"
+            accessibilityLabel={`View ${label.toLowerCase()} photo`}
+            onPress={() => setOpen(open === uri ? null : uri)}
+            style={{ flex: 1, gap: 4 }}
+          >
+            <Image
+              source={{ uri }}
+              style={{
+                width: "100%",
+                height: 110,
+                borderRadius: 12,
+                backgroundColor: P.track,
+              }}
+              resizeMode="cover"
+            />
+            <Text style={[type.mono, { textAlign: "center" }]}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      {open && (
+        <Pressable onPress={() => setOpen(null)}>
+          <Image
+            source={{ uri: open }}
+            style={{
+              width: "100%",
+              height: 420,
+              borderRadius: 12,
+              backgroundColor: P.track,
+            }}
+            resizeMode="contain"
+          />
+          <Text style={[type.mono, { textAlign: "center" }]}>Tap to close</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+/** The buyer missed pickup and the 24-hour hold ended. */
+function MissedPickup({ view: v }: { view: OrderView }) {
+  return (
+    <View
+      style={[
+        styles.card,
+        { gap: 8, borderWidth: 1.5, borderColor: "#E7B8B3" },
+      ]}
+    >
+      <View style={styles.row}>
+        <Ionicons name="alert-circle" size={24} color={P.beet} />
+        <Text style={[styles.h2, { flex: 1 }]}>You missed pickup</Text>
+      </View>
+      <Text style={styles.text}>
+        The 24-hour hold ended {when(v.mine!.noShowAt!)}. Your bag and payment
+        went to {v.order.organizerName.split(" ")[0]}, and a no-show was added
+        to your account.
+      </Text>
+      <Text
+        accessibilityRole="link"
+        onPress={() => router.push("/policies")}
+        style={[type.label, { color: P.carrot }]}
+      >
+        Read the no-show policy
+      </Text>
     </View>
   );
 }
@@ -226,7 +412,8 @@ function ShareChooser({
   const changed = v.items.some((i) => (qty[i.id] ?? 0) !== i.mine);
   const releasing = selected.length === 0;
   const paid = v.mine?.paidCents ?? 0;
-  const toPay = v.isOrganizer ? 0 : Math.max(0, total - paid);
+  const fee = feeFor(total, v.isOrganizer);
+  const toPay = Math.max(0, total + fee - paid);
   const suffix = invite ? `?invite=${encodeURIComponent(invite)}` : "";
 
   const save = () =>
@@ -244,7 +431,7 @@ function ShareChooser({
       });
       await onSaved();
       // Pay right away so the organizer has the money before shopping.
-      if (!v.isOrganizer && total > paid)
+      if (toPay > 0)
         router.push({
           pathname: "/(tabs)/pay/[id]",
           params: { id: v.order.id },
@@ -280,6 +467,7 @@ function ShareChooser({
           items={selected}
           quantity={(id) => qty[id] ?? 0}
           total={total}
+          fee={fee}
           organizer={v.order.organizerName}
           action={
             <Button
@@ -462,16 +650,6 @@ function PayShare({ view: v }: { view: OrderView }) {
   const m = v.mine,
     o = v.order;
   if (!m) return null;
-  if (v.isOrganizer)
-    return (
-      <View style={[styles.note, styles.row, { alignItems: "flex-start" }]}>
-        <Ionicons name="information-circle-outline" size={22} color={P.ink} />
-        <Text style={[styles.text, { flex: 1 }]}>
-          You’re the organizer, so there’s nothing to pay. Your own shares come
-          out of the shopping you do with everyone’s payments.
-        </Text>
-      </View>
-    );
   const refunds = m.payments.filter((p) => p.kind === "refund");
   const lastCard = m.payments.find((p) => p.kind === "payment" && p.cardLast4);
   // Stripe test key on the server → Stripe's hosted test checkout.

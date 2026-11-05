@@ -66,7 +66,11 @@ export default function Order() {
   return (
     <Screen
       title={o?.name ?? "Group"}
-      subtitle={o ? `${o.store} · by ${o.organizerName}` : undefined}
+      subtitle={
+        o
+          ? `${o.store} · by ${o.organizerName}${o.organizerRating ? ` · ★ ${o.organizerRating.average.toFixed(1)} (${o.organizerRating.count})` : ""}`
+          : undefined
+      }
       role={showOrganizer ? "organizing" : "buying"}
       stamp={
         o ? (

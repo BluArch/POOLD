@@ -129,7 +129,7 @@ export function OrderRow({
                     ? o.myShares > 0
                       ? `Organized by you · ${o.myShares} ${o.myShares === 1 ? "share" : "shares"} for you`
                       : "Organized by you"
-                    : `by ${organizer}`}
+                    : `by ${organizer}${o.organizerRating ? ` · ★ ${o.organizerRating.average.toFixed(1)}` : ""}`}
               </Text>
             </View>
           </View>

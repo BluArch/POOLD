@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { Router } from "express";
 import type { Pool } from "mysql2/promise";
 import { z } from "zod";
-import type { Payment } from "@poold/contracts";
+import { feeFor, type Payment, type PayoutSummary } from "@poold/contracts";
 import { verified } from "./auth.js";
 import { execute, first, rows, iso, transaction, type DB } from "./db.js";
 import { fail } from "./errors.js";
@@ -72,7 +72,17 @@ export async function memberEstimate(c: DB, oid: string, uid: string) {
   return Number(r.cents);
 }
 
-async function netPaid(c: DB, oid: string, uid: string) {
+/** Shares plus the 5% service fee (organizers pay no fee on their own). */
+export async function memberOwed(
+  c: DB,
+  o: { id: string; organizer_id: string },
+  uid: string,
+) {
+  const shares = await memberEstimate(c, o.id, uid);
+  return shares + feeFor(shares, uid === o.organizer_id);
+}
+
+export async function netPaid(c: DB, oid: string, uid: string) {
   const r = await first(
     c,
     `SELECT COALESCE(SUM(CASE kind WHEN 'payment' THEN amount_cents ELSE -amount_cents END),0) AS cents
@@ -88,7 +98,14 @@ export async function ledger(
   oid: string,
   uid: string,
   estimateCents: number,
-): Promise<{ paidCents: number; dueCents: number; payments: Payment[] }> {
+  organizer = false,
+): Promise<{
+  paidCents: number;
+  dueCents: number;
+  feeCents: number;
+  payments: Payment[];
+}> {
+  const fee = feeFor(estimateCents, organizer);
   const list = await rows(
     c,
     "SELECT * FROM payments WHERE order_id=? AND user_id=? ORDER BY created_at DESC, kind DESC",
@@ -100,7 +117,8 @@ export async function ledger(
   );
   return {
     paidCents: paid,
-    dueCents: Math.max(0, estimateCents - paid),
+    feeCents: fee,
+    dueCents: Math.max(0, estimateCents + fee - paid),
     payments: list.map((p) => ({
       id: p.id,
       kind: p.kind,
@@ -125,8 +143,7 @@ export async function settle(
   reason: string,
   cancelled = false,
 ) {
-  if (uid === o.organizer_id) return;
-  const owed = cancelled ? 0 : await memberEstimate(c, o.id, uid);
+  const owed = cancelled ? 0 : await memberOwed(c, o, uid);
   const paid = await netPaid(c, o.id, uid);
   if (paid <= owed) return;
   const refund = paid - owed;
@@ -177,16 +194,9 @@ export async function settleAll(
 /** What this member still owes right now. */
 async function amountDue(db: DB, orderId: string, uid: string) {
   const o = await getOrder(db, orderId, uid);
-  if (o.organizer_id === uid)
-    fail(
-      409,
-      "ORGANIZER",
-      "You’re the organizer, so your own shares come out of your shopping. There’s nothing to pay.",
-    );
   if (["draft", "cancelled"].includes(o.status))
     fail(409, "NOT_PAYABLE", "This group isn’t taking payments.");
-  const cents =
-    (await memberEstimate(db, o.id, uid)) - (await netPaid(db, o.id, uid));
+  const cents = (await memberOwed(db, o, uid)) - (await netPaid(db, o.id, uid));
   if (cents <= 0) fail(409, "NOTHING_TO_PAY", "You’re all paid up.");
   return { o, cents };
 }
@@ -337,4 +347,132 @@ export function payments(db: Pool, appUrl: string, sendMail: MailSender) {
     res.json({ ok: true, ref, amountCents: cents });
   });
   return r;
+}
+
+/** Everything members have paid in, minus refunds. */
+async function orderNet(c: DB, oid: string) {
+  const r = await first(
+    c,
+    "SELECT COALESCE(SUM(CASE kind WHEN 'payment' THEN amount_cents ELSE -amount_cents END),0) AS cents FROM payments WHERE order_id=?",
+    [oid],
+  );
+  return Number(r.cents);
+}
+
+/**
+ * When shopping starts, the organizer gets the money for the items only.
+ * The service fees stay held until every bag is handed out.
+ */
+export async function releaseShoppingMoney(
+  c: DB,
+  o: { id: string; name: string; organizer_id: string },
+) {
+  const members = await rows(
+    c,
+    "SELECT user_id FROM memberships WHERE order_id=?",
+    [o.id],
+  );
+  let cents = 0;
+  for (const m of members) {
+    const shares = await memberEstimate(c, o.id, m.user_id);
+    cents += Math.min(shares, Math.max(0, await netPaid(c, o.id, m.user_id)));
+  }
+  if (cents <= 0) return;
+  await execute(
+    c,
+    "INSERT IGNORE INTO payouts(id,order_id,kind,amount_cents) VALUES(?,?,'shopping',?)",
+    [id(), o.id, cents],
+  );
+  await notify(
+    c,
+    o.organizer_id,
+    o.id,
+    `${o.name}: ${dollars(cents)} released for shopping (test). Service fees are released after every bag is handed out.`,
+    `payout-shopping:${o.id}`,
+  );
+}
+
+/** After hand-out: release everything still held (the fees and any balance). */
+export async function releaseRemaining(
+  c: DB,
+  o: { id: string; name: string; organizer_id: string },
+) {
+  const released = await first(
+    c,
+    "SELECT COALESCE(SUM(amount_cents),0) AS cents FROM payouts WHERE order_id=?",
+    [o.id],
+  );
+  const cents = (await orderNet(c, o.id)) - Number(released.cents);
+  if (cents <= 0) return;
+  await execute(
+    c,
+    "INSERT IGNORE INTO payouts(id,order_id,kind,amount_cents) VALUES(?,?,'fees',?)",
+    [id(), o.id, cents],
+  );
+  await notify(
+    c,
+    o.organizer_id,
+    o.id,
+    `${o.name}: ${dollars(cents)} in service fees released to you (test). Thanks for organizing!`,
+    `payout-fees:${o.id}`,
+  );
+}
+
+export async function payoutSummary(
+  c: DB,
+  oid: string,
+): Promise<PayoutSummary> {
+  const list = await rows(
+    c,
+    "SELECT kind,amount_cents,created_at FROM payouts WHERE order_id=? ORDER BY created_at",
+    [oid],
+  );
+  const collected = await orderNet(c, oid);
+  const released = list.reduce((n, p) => n + p.amount_cents, 0);
+  return {
+    collectedCents: collected,
+    releasedCents: released,
+    heldCents: Math.max(0, collected - released),
+    releases: list.map((p) => ({
+      kind: p.kind,
+      amountCents: p.amount_cents,
+      createdAt: iso(p.created_at),
+    })),
+  };
+}
+
+/**
+ * When shares close, anyone who hasn't paid anything loses their shares, so
+ * the organizer only buys what's paid for.
+ */
+export async function dropUnpaid(
+  c: DB,
+  o: { id: string; name: string; organizer_id: string },
+) {
+  const members = await rows(
+    c,
+    "SELECT DISTINCT s.user_id FROM share_claims s JOIN order_items i ON i.id=s.item_id WHERE i.order_id=?",
+    [o.id],
+  );
+  for (const m of members) {
+    if ((await netPaid(c, o.id, m.user_id)) > 0) continue;
+    await execute(
+      c,
+      "DELETE s FROM share_claims s JOIN order_items i ON i.id=s.item_id WHERE i.order_id=? AND s.user_id=?",
+      [o.id, m.user_id],
+    );
+    if (m.user_id !== o.organizer_id)
+      await execute(
+        c,
+        "DELETE FROM memberships WHERE order_id=? AND user_id=?",
+        [o.id, m.user_id],
+      );
+    await notify(
+      c,
+      m.user_id,
+      o.id,
+      `${o.name}: shares closed before you paid, so your shares were released. Nothing was charged.`,
+      `unpaid-drop:${o.id}:${m.user_id}`,
+    );
+  }
 }

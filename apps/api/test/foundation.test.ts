@@ -105,7 +105,7 @@ test("foundation: native registration starts an unverified session in developmen
   const db = database(process.env.TEST_DATABASE_URL);
   try {
     for (const production of [false, true]) {
-      const email = `native-register-${production}-${Date.now()}@example.com`;
+      const email = `native-register-${production}-${Date.now()}@uvic.ca`;
       const server = createApp(db, {
         production,
         otpSecret: "f".repeat(64),
