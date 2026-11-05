@@ -18,16 +18,14 @@ type Frame = "upcoming" | "past";
 const ended = (o: OrderSummary) =>
   o.status === "completed" || o.status === "cancelled";
 
-/** Buyer side: groups you've joined, plus your own shares in groups you run. */
+/** Buyer side: groups you've joined, plus the groups you run (labelled). */
 export default function MyOrders() {
   const r = useResource<OrderSummary[]>("/orders?scope=mine");
   const session = useSession();
   const [frame, setFrame] = useState<Frame>("upcoming");
-  // Groups you organize show here too when you took shares in them,
-  // in their own section so it's clear you're also the organizer.
-  const own = (r.data ?? []).filter(
-    (o) => o.organizerId === session.user?.id && o.myShares > 0,
-  );
+  // Groups you organize show here too (once published), in their own
+  // section so it's clear you're also the organizer.
+  const own = (r.data ?? []).filter((o) => o.organizerId === session.user?.id);
   const joined = (r.data ?? []).filter(
     (o) => o.organizerId !== session.user?.id,
   );
@@ -43,7 +41,7 @@ export default function MyOrders() {
   return (
     <Screen
       title="My groups"
-      subtitle="Groups you’ve joined"
+      subtitle="Groups you’re in"
       roleSwitch
       onRefresh={() => void r.refresh()}
       refreshing={r.loading}
@@ -74,7 +72,7 @@ export default function MyOrders() {
             Organized by you
           </Text>
           <Text style={[type.mono, { marginBottom: 10 }]}>
-            Your own shares in groups you run
+            Groups you run. Open one to add your own shares.
           </Text>
           {ownList.map((o) => (
             <OrderRow key={o.id} order={o} showStatus byYou />

@@ -126,7 +126,9 @@ export function OrderRow({
                 {organize
                   ? "You organize"
                   : byYou
-                    ? `Organized by you · ${o.myShares} ${o.myShares === 1 ? "share" : "shares"} for you`
+                    ? o.myShares > 0
+                      ? `Organized by you · ${o.myShares} ${o.myShares === 1 ? "share" : "shares"} for you`
+                      : "Organized by you"
                     : `by ${organizer}`}
               </Text>
             </View>

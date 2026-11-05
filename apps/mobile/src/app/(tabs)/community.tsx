@@ -119,6 +119,8 @@ export default function Community() {
 
   const all = r.data ?? [];
   const others = all.filter((o) => o.organizerId !== s.user?.id);
+  // Your own open groups, so the buyer side shows what you just published.
+  const mine = all.filter((o) => o.organizerId === s.user?.id);
   const inFrame = others.filter(
     (o) =>
       frame === "all" ||
@@ -285,6 +287,14 @@ export default function Community() {
               )}
             </EmptyState>
           )}
+        </View>
+      )}
+      {mine.length > 0 && (
+        <View>
+          <SectionTitle>Organized by you</SectionTitle>
+          {mine.map((o) => (
+            <OrderRow key={o.id} order={o} byYou />
+          ))}
         </View>
       )}
       <Pressable
