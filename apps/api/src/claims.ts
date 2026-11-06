@@ -1,3 +1,4 @@
+import { invalidateApprovals } from "./payments/engine.js";
 import { Router } from "express";
 import type { Pool } from "mysql2/promise";
 import { claimsInput } from "@poold/contracts";
@@ -46,21 +47,20 @@ export function claims(db: Pool) {
         [o.id, req.user!.id],
       );
       const positive = b.claims.some((i) => i.quantity > 0);
-      // Buyers save a card when they confirm shares. Nothing is charged now;
-      // a hold is placed when shares close.
+      // Saving selections does not approve any charge. Approval is a separate exact quote.
       if (
         positive &&
         o.organizer_id !== req.user!.id &&
         !(await first(
           c,
-          "SELECT user_id FROM payment_methods WHERE user_id=?",
-          [req.user!.id],
+          "SELECT user_id FROM payment_methods WHERE user_id=? UNION SELECT user_id FROM payment_profiles WHERE user_id=? AND ready=TRUE",
+          [req.user!.id, req.user!.id],
         ))
       )
         fail(
           409,
           "CARD_REQUIRED",
-          "Add a card first. You won’t be charged until shares close.",
+          "Save a card first, then review and approve your basket for the closing time.",
         );
       if (positive && !existing) {
         const me = await publicUser(c as any, req.user!.id);
@@ -109,6 +109,7 @@ export function claims(db: Pool) {
           "INSERT INTO memberships(order_id,user_id,attending) VALUES(?,?,TRUE)",
           [o.id, req.user!.id],
         );
+      await invalidateApprovals(c, o.id, req.user!.id);
       await execute(
         c,
         "DELETE c FROM share_claims c JOIN order_items i ON i.id=c.item_id WHERE i.order_id=? AND c.user_id=?",
@@ -176,8 +177,7 @@ export function claims(db: Pool) {
           add.set(who, mine);
         }
       }
-      if (!add.size)
-        fail(409, "NOTHING_LEFT", "Every pack is already full.");
+      if (!add.size) fail(409, "NOTHING_LEFT", "Every pack is already full.");
       for (const [who, lines] of add) {
         await execute(
           c,
@@ -196,11 +196,9 @@ export function claims(db: Pool) {
             [item, who, qty],
           );
       }
-      await execute(
-        c,
-        "UPDATE orders SET revision=revision+1 WHERE id=?",
-        [o.id],
-      );
+      await execute(c, "UPDATE orders SET revision=revision+1 WHERE id=?", [
+        o.id,
+      ]);
     });
     res.json({ ok: true });
   });

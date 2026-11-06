@@ -103,6 +103,19 @@ export async function seed(db: Pool) {
       "SELECT id,status,deadline FROM orders WHERE name=? AND organizer_id=?",
       [name, `demo-${who}`],
     );
+    // Financial history survives demo refreshes and process restarts.
+    if (
+      existing &&
+      (await first(
+        db,
+        `SELECT 1 AS active WHERE
+      EXISTS(SELECT 1 FROM funding_batches WHERE order_id=?) OR
+      EXISTS(SELECT 1 FROM payments WHERE order_id=?) OR
+      EXISTS(SELECT 1 FROM authorization_quotes WHERE order_id=?)`,
+        [existing.id, existing.id, existing.id],
+      ))
+    )
+      continue;
     // Keep sample groups that are still joinable or mid-way through (so a
     // demo in progress isn't wiped). Replace ones that expired or finished,
     // so every account always has open groups to browse.

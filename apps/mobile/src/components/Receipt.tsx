@@ -42,8 +42,10 @@ export function ShareItemCard({
   item: i,
   quantity,
   onChange,
+  organizer = false,
 }: {
   item: Item;
+  organizer?: boolean;
   quantity: number;
   onChange: (q: number) => void;
 }) {
@@ -71,6 +73,12 @@ export function ShareItemCard({
             </Text>
             {saving > 0 && <Badge tone="good">{`Save ${money(saving)}`}</Badge>}
           </View>
+          <Text style={type.mono}>
+            {money(organizer ? i.priceCents : withMarkup(i.priceCents))} /pack
+            {organizer
+              ? " · store cost"
+              : " · includes 15% markup; 5% service fee at approval"}
+          </Text>
           {i.priceSource === "demo" && (
             <Text style={styles.muted}>Class-project demo estimate</Text>
           )}
@@ -131,7 +139,7 @@ export function ReceiptPanel({
         <View style={{ flex: 1 }}>
           <Text style={type.mono}>
             {shares
-              ? `${shares} ${shares === 1 ? "share" : "shares"}${fee ? ` + ${money(fee)} fee (5%)` : ""} · charged when shopping starts`
+              ? `${shares} ${shares === 1 ? "share" : "shares"}${fee ? ` + ${money(fee)} fee (5%)` : ""} · review and approve for group closure`
               : "Tap + to add a share"}
           </Text>
           <Text accessibilityLiveRegion="polite" style={type.total}>

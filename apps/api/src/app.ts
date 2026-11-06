@@ -15,6 +15,8 @@ import { payments } from "./payments.js";
 import { claims } from "./claims.js";
 import { orders } from "./orders.js";
 import { catalogue } from "./catalogue.js";
+import { paymentRoutes } from "./payments/routes.js";
+import { stripeWebhook } from "./payments/webhook.js";
 import { errorHandler, RATE_LIMIT_ERROR } from "./errors.js";
 /**
  * When the API also serves the web app (hosting, or the phone demo link), the
@@ -54,6 +56,7 @@ export function createApp(
   const sendMail = options.sendMail ?? mailer(production);
   const app = express();
   app.disable("x-powered-by");
+  app.use(stripeWebhook(db, production));
   if (process.env.TRUST_PROXY_HOPS) {
     const hops = Number(process.env.TRUST_PROXY_HOPS);
     if (!Number.isInteger(hops) || hops < 1 || hops > 5)
@@ -131,6 +134,7 @@ export function createApp(
   app.use("/api", claims(db));
   app.use("/api", orders(db));
   app.use("/api", catalogue(db));
+  app.use("/api", paymentRoutes(db, production));
   if (demo && !production)
     app.get("/api/dev/outbox", async (_req, res) => {
       try {

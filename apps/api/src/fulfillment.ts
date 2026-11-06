@@ -10,15 +10,9 @@ import { fail, RATE_LIMIT_ERROR } from "./errors.js";
 import { notify, notifyMembers } from "./notifications.js";
 import { hash, id } from "./security.js";
 import { orderInput } from "@poold/contracts";
-import {
-  settleAll,
-  placeHolds,
-  dropFailedHolds,
-  failedHolds,
-  captureHolds,
-  releaseShoppingMoney,
-  releaseRemaining,
-} from "./payments.js";
+import { settleAll, releaseRemaining } from "./payments.js";
+import { prepareClose, invalidateApprovals } from "./payments/engine.js";
+import { runPaymentReconciliation } from "./payments/reconcile.js";
 import { proofInput, ratingInput } from "@poold/contracts";
 const deliverableSql = `SELECT m.* FROM memberships m WHERE m.order_id=? AND EXISTS(SELECT 1 FROM share_claims c JOIN order_items i ON i.id=c.item_id WHERE c.user_id=m.user_id AND i.order_id=m.order_id AND i.available=TRUE AND c.quantity>0)`;
 export function fulfillment(db: Pool) {
@@ -50,22 +44,10 @@ export function fulfillment(db: Pool) {
         ]);
       } else if (next[o.status] !== status)
         fail(409, "INVALID_TRANSITION", "Follow the order steps in sequence.");
-      // Closing shares: the organizer must be buying too, then each buyer's
-      // card gets a hold. The organizer can close even if nobody else joined.
+      // Scheduled closure freezes current approvals; charging/funding run outside this transaction.
       if (status === "locked") {
         const problem = await closeProblem(c, o, { needBuyers: false });
         if (problem) fail(409, problem.code, problem.message);
-      }
-      // Shopping can't start while any buyer still has a declined card.
-      if (status === "shopping") {
-        await dropFailedHolds(c, o);
-        const waiting = await failedHolds(c, o.id);
-        if (waiting.length)
-          fail(
-            409,
-            "HOLDS_PENDING",
-            `${waiting.length} ${waiting.length === 1 ? "buyer’s card was" : "buyers’ cards were"} declined. They have until ${new Date(waiting[0].retry_until).toLocaleTimeString("en-CA", { hour: "numeric", minute: "2-digit", timeZone: "America/Vancouver" })} to fix it; after that their shares drop and you can start.`,
-          );
       }
       if (
         status === "ready" &&
@@ -87,6 +69,17 @@ export function fulfillment(db: Pool) {
       );
       const needed = its.filter((i) => i.available && Number(i.claimed) > 0);
       if (status === "shopping") {
+        const batch = await first(
+          c,
+          "SELECT status FROM funding_batches WHERE order_id=?",
+          [o.id],
+        );
+        if (batch?.status !== "funded")
+          fail(
+            409,
+            "SHOPPING_NOT_FUNDED",
+            "Wait until all approved payments and the complete grocery payout are confirmed.",
+          );
         if (!needed.length)
           fail(
             409,
@@ -159,11 +152,7 @@ export function fulfillment(db: Pool) {
           "Confirm every required collection before completing the order.",
         );
       await execute(c, "UPDATE orders SET status=? WHERE id=?", [status, o.id]);
-      if (status === "locked") await placeHolds(c, o);
-      if (status === "shopping") {
-        await captureHolds(c, o);
-        await releaseShoppingMoney(c, o);
-      }
+      if (status === "locked") await prepareClose(c, o);
       if (status === "completed") await releaseRemaining(c, o);
       if (status === "cancelled")
         await settleAll(c, o, "the group was cancelled", true);
@@ -182,6 +171,7 @@ export function fulfillment(db: Pool) {
         `status:${o.id}:${status}`,
       );
     });
+    await runPaymentReconciliation(db, process.env.NODE_ENV === "production");
     res.json({ ok: true });
   });
   r.patch("/orders/:id/items/:itemId", verified, async (req, res) => {
@@ -220,11 +210,45 @@ export function fulfillment(db: Pool) {
         );
       if (
         b.bought === true &&
+        (await first(
+          c,
+          "SELECT id FROM funding_supplements WHERE item_id=? AND status NOT IN('funded','cancelled') LIMIT 1",
+          [it.id],
+        ))
+      )
+        fail(
+          409,
+          "SUPPLEMENT_NOT_FUNDED",
+          "Wait for explicitly approved extra grocery funding, or cancel the price adjustment and skip/reduce the item.",
+        );
+      if (
+        b.bought === true &&
         (!it.available ||
           b.available === false ||
           b.shortfallDecision === "skip")
       )
         fail(409, "UNAVAILABLE", "An unavailable item cannot be checked off.");
+      if (
+        o.status !== "open" &&
+        b.priceCents !== undefined &&
+        b.priceCents > it.price_cents
+      )
+        fail(
+          409,
+          "SUPPLEMENT_APPROVAL_REQUIRED",
+          "A higher store price needs an explicitly approved supplemental payment before purchase. Skip or reduce the item instead of charging automatically.",
+        );
+      if (
+        o.status === "locked" &&
+        (b.priceCents !== undefined ||
+          b.available !== undefined ||
+          b.shortfallDecision !== undefined)
+      )
+        fail(
+          409,
+          "FROZEN_BASKET",
+          "Closed purchases can change only through payment recovery; ordinary item edits remain closed.",
+        );
       const available =
           b.shortfallDecision === "skip"
             ? false
@@ -244,6 +268,7 @@ export function fulfillment(db: Pool) {
         ],
       );
       if (changed) {
+        await invalidateApprovals(c, o.id);
         await execute(c, "UPDATE orders SET revision=revision+1 WHERE id=?", [
           o.id,
         ]);

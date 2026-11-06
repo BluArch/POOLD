@@ -1,3 +1,4 @@
+import { assertPaymentSchema } from "./payments/schema.js";
 import { database } from "./db.js";
 import { runJobs } from "./jobs.js";
 import { dispatchPush, firebaseSender } from "./push.js";
@@ -5,6 +6,7 @@ import { createApp } from "./app.js";
 import { seed } from "./seed.js";
 const db = database();
 await db.query("SELECT 1");
+await assertPaymentSchema(db);
 // Refresh sample groups only when demo mode is explicitly enabled. Hosted demos
 // require a separate opt-in while retaining production cookies, TLS, and mail.
 if (

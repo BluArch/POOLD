@@ -1,3 +1,4 @@
+import { quoteFor } from "./payments/engine.js";
 import { ledger, payoutSummary } from "./payments.js";
 import type {
   OrderInput,
@@ -7,7 +8,7 @@ import type {
   Claim,
   Member,
 } from "@poold/contracts";
-import { feeFor, shareCost, withMarkup } from "@poold/contracts";
+import { shareCost, withMarkup } from "@poold/contracts";
 import type { DB } from "./db.js";
 import { first, rows, execute, iso } from "./db.js";
 import { fail } from "./errors.js";
@@ -172,9 +173,16 @@ export async function orderView(
     available: i.available,
     portioning: i.portioning,
   });
+  const financial = await quoteFor(db, o, uid);
   const myClaims = items
     .filter((i) => i.mine > 0)
-    .map((i) => claimFor(i, i.mine, uid));
+    .map((i) => {
+      const c = claimFor(i, i.mine, uid);
+      const line = financial.details.lines.find((l) => l.itemId === i.id);
+      return line
+        ? { ...c, estimateCents: line.groceryCents + line.markupCents }
+        : c;
+    });
   const ms = await rows(
     db,
     `SELECT m.*,u.name,u.photo,(u.verified AND u.email LIKE '%@uvic.ca') AS university,(SELECT COUNT(*) FROM memberships mc JOIN orders oc ON oc.id=mc.order_id WHERE mc.user_id=u.id AND (mc.collected_at IS NOT NULL OR oc.organizer_id=u.id) AND oc.status='completed') AS completed FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.order_id=?`,
@@ -246,15 +254,18 @@ export async function orderView(
     "SELECT code FROM collection_tokens WHERE order_id=? AND user_id=? AND used_at IS NULL",
     [o.id, uid],
   );
+  const funding = await first(
+    db,
+    "SELECT status FROM funding_batches WHERE order_id=?",
+    [o.id],
+  );
   return {
+    paymentFundingStatus: funding?.status,
     order: await summary(db, o, uid),
     items,
     myClaims,
     myEstimateCents: myClaims.reduce((n, c) => n + c.estimateCents, 0),
-    myFeeCents: feeFor(
-      myClaims.reduce((n, c) => n + c.estimateCents, 0),
-      o.organizer_id === uid,
-    ),
+    myFeeCents: financial.mine?.serviceFeeCents ?? 0,
     ...(o.organizer_id === uid ? { payouts: await payoutSummary(db, o) } : {}),
     proof: await proofFor(db, o, uid),
     myRating: rating ? Number(rating.stars) : null,

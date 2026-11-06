@@ -1,3 +1,4 @@
+import { runJobs } from "../src/jobs.js";
 import assert from "node:assert/strict";
 import { database, execute } from "../src/db.js";
 import { migrate } from "../src/migrate.js";
@@ -94,9 +95,40 @@ export async function setup() {
     );
     assert.equal(r.status, 200, JSON.stringify(r.body));
   };
+  const approve = async (oid: string, auth: string) => {
+    const q = (
+      await call(`/orders/${oid}/payment-preview`, "GET", undefined, auth)
+    ).body.quote;
+    assert.ok(q, "A nonempty member basket is required");
+    const response = await call(
+      `/orders/${oid}/payment-approve`,
+      "POST",
+      { fingerprint: q.fingerprint, amountCents: q.totalCents, agreed: true },
+      auth,
+    );
+    assert.equal(response.status, 200, JSON.stringify(response.body));
+  };
+  const closeFunding = async (oid: string) => {
+    const v = (await call(`/orders/${oid}`, "GET", undefined, tokens.maya))
+      .body;
+    for (const key of ["jordan", "alex", "priya"] as const) {
+      const q = (
+        await call(
+          `/orders/${oid}/payment-preview`,
+          "GET",
+          undefined,
+          tokens[key],
+        )
+      ).body.quote;
+      if (q) await approve(oid, tokens[key]);
+    }
+    await runJobs(db, new Date(Date.parse(v.order.deadline) + 1));
+  };
   return {
     db,
     call,
+    approve,
+    closeFunding,
     tokens,
     ids,
     create,

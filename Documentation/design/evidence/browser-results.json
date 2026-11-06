@@ -1,0 +1,17 @@
+{
+  "checks": [
+    "Start opens; Escape dismisses and focus returns",
+    "Inline save persists quantity and 200-cent rounded total after refresh",
+    "Release-all clears claims and membership",
+    "Dedicated claim review/confirm persists through existing PUT endpoint",
+    "All My groups filters and legacy organize redirect",
+    "Organizer summary links return to current work; status bars are not interactive",
+    "Pickup arrival saves and renders confirmation",
+    "Private invite form and legacy order deep link",
+    "Request interest vote round trip",
+    "Eight selected items use bounded receipt scrolling",
+    "Wide content stays within 640px",
+    "Sign-out returns to welcome"
+  ],
+  "errors": []
+}

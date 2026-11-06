@@ -1,3 +1,4 @@
+import { PaymentWorkflowPanel } from "./PaymentWorkflow";
 import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, Linking, Pressable, Image, Modal } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -56,9 +57,7 @@ export function MemberView({
   const [looking, setLooking] = useState(browse && !hasShares);
 
   if (canChange && (looking || full) && !hasShares)
-    return (
-      <BrowseList view={v} full={full} onJoin={() => setLooking(false)} />
-    );
+    return <BrowseList view={v} full={full} onJoin={() => setLooking(false)} />;
 
   return (
     <>
@@ -80,13 +79,15 @@ export function MemberView({
         </View>
       )}
 
+      {(hasShares || o.joined) && (
+        <PaymentWorkflowPanel view={v} refresh={refresh} />
+      )}
+
       {canChange && !v.isOrganizer && (
         <GroupRequests view={v} invite={invite} />
       )}
 
       {!canChange && !hasShares && <ItemsReadOnly items={v.items} />}
-
-      {hasShares && !v.mine?.noShowAt && <PayShare view={v} />}
 
       {v.proof && <ProofCard view={v} />}
 
@@ -450,8 +451,8 @@ function BrowseList({
           <View style={[styles.row, { gap: 10, alignItems: "flex-start" }]}>
             <Ionicons name="shield-checkmark-outline" size={20} color={P.ink} />
             <Text style={[styles.text, { flex: 1 }]}>
-              Joining is free. You pick only the shares you want, and nothing
-              is charged until shares close. You can change or drop them until
+              Joining is free. You pick only the shares you want, and nothing is
+              charged until shares close. You can change or drop them until
               then.
             </Text>
           </View>
@@ -505,12 +506,14 @@ function ShareChooser({
 
   const categories = ["All", ...new Set(v.items.map((i) => i.category))];
   const selected = v.items.filter((i) => (qty[i.id] ?? 0) > 0);
-  const total = selected.reduce((n, i) => n + estimateFor(i, qty[i.id], v.isOrganizer), 0);
+  const total = selected.reduce(
+    (n, i) => n + estimateFor(i, qty[i.id], v.isOrganizer),
+    0,
+  );
   const changed = v.items.some((i) => (qty[i.id] ?? 0) !== i.mine);
   const releasing = selected.length === 0;
   const fee = feeFor(total, v.isOrganizer);
-  // Buyers need a saved card to confirm. Nothing is charged until shares
-  // close (hold) and shopping starts (charge).
+  // Card setup and basket approval are separate from saving selections.
   const card = useResource<SavedCard | null>("/payment-method");
   const needsCard =
     !v.isOrganizer && !releasing && card.data === null && !card.loading;
@@ -556,6 +559,7 @@ function ShareChooser({
           <ShareItemCard
             key={i.id}
             item={i}
+            organizer={v.isOrganizer}
             quantity={qty[i.id] ?? 0}
             onChange={(n) => setQty({ ...qty, [i.id]: n })}
           />
@@ -744,7 +748,7 @@ function ConfirmPickup({
           <Text style={[type.mono, { fontSize: 12 }]}>
             {v.isOrganizer
               ? "You pay for your share at the store. Nothing is charged in the app."
-              : `Nothing is charged now. ${card ? `${card.brand} •••• ${card.last4}` : "Your card"} gets a hold when shares close and is charged when shopping starts. Missing pickup means losing your bag after 24 hours.`}
+              : `Nothing is charged now. ${card ? `${card.brand} •••• ${card.last4}` : "Your card"} is saved for later. After saving these shares, approve the exact basket and closing time in Your payment. Every change needs approval again.`}
           </Text>
           <Check
             label="I can attend this pickup time"
@@ -891,136 +895,5 @@ export function PickupDetails({
       <DirectionsButton order={o} />
       <ErrorText message={a.error} />
     </>
-  );
-}
-
-/**
- * Where your money stands: card saved (no charge) → hold when shares close →
- * charged when shopping starts → refunds or small extra charges after.
- */
-function PayShare({ view: v }: { view: OrderView }) {
-  const m = v.mine,
-    o = v.order;
-  if (!m) return null;
-  const changeCard = () =>
-    router.push({ pathname: "/(tabs)/pay/[id]", params: { id: o.id } });
-  if (v.isOrganizer)
-    return (
-      <View style={[styles.note, styles.row, { alignItems: "flex-start" }]}>
-        <Ionicons name="storefront-outline" size={22} color={P.ink} />
-        <Text style={[styles.text, { flex: 1 }]}>
-          You pay for your own share at the store, so there’s nothing to pay in
-          the app and no service fee.
-        </Text>
-      </View>
-    );
-  const h = m.hold;
-  const card = h?.cardLast4
-    ? `${h.cardBrand ?? "Card"} •••• ${h.cardLast4}`
-    : "your card";
-  const total = v.myEstimateCents + v.myFeeCents;
-  if (h?.status === "failed")
-    return (
-      <View
-        style={[styles.card, { gap: 10, borderWidth: 2, borderColor: P.beet }]}
-      >
-        <View style={styles.row}>
-          <Ionicons name="alert-circle" size={24} color={P.beet} />
-          <Text style={[styles.h2, { flex: 1 }]}>
-            {h.reason ?? "Card declined"}
-          </Text>
-        </View>
-        <Text style={styles.text}>
-          We couldn’t hold {money(h.amountCents)} on {card}. Update your card
-          {h.retryUntil ? ` by ${when(h.retryUntil)}` : ""} or your shares will
-          be released. Shopping can’t start until this is fixed.
-        </Text>
-        <Button icon="card-outline" onPress={changeCard}>
-          Update card
-        </Button>
-      </View>
-    );
-  if (h?.status === "authorized")
-    return (
-      <View style={[styles.card, { gap: 6 }]}>
-        <View style={styles.between}>
-          <View style={[styles.row, { flex: 1 }]}>
-            <Ionicons name="lock-closed" size={20} color={brand.greenDeep} />
-            <Text style={styles.label}>
-              {money(h.amountCents)} held on {card}
-            </Text>
-          </View>
-          <Badge tone="good">Authorized</Badge>
-        </View>
-        <Text style={type.mono}>
-          Charged when {o.organizerName.split(" ")[0]} starts shopping. Nothing
-          has been charged yet.
-        </Text>
-      </View>
-    );
-  if (h?.status === "captured" || m.paidCents > 0 || m.payments.length) {
-    const refunds = m.payments.filter((p) => p.kind === "refund");
-    const charges = m.payments.filter((p) => p.kind === "payment");
-    return (
-      <View style={[styles.card, { gap: 8 }]}>
-        <View style={styles.row}>
-          <Ionicons name="checkmark-circle" size={24} color={brand.greenDark} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>
-              {m.paidCents > 0
-                ? `Paid ${money(m.paidCents)}`
-                : "Fully refunded"}
-            </Text>
-            <Text style={type.mono}>{card} · test payment</Text>
-          </View>
-          <Badge tone="good">Paid</Badge>
-        </View>
-        {[...charges.slice(0, -1), ...refunds].map((p) => (
-          <View key={p.id} style={styles.between}>
-            <Text style={[type.mono, { flex: 1 }]}>
-              {p.kind === "refund" ? "Refunded" : "Extra charge"}{" "}
-              {when(p.createdAt)}
-              {p.note ? ` · ${p.note}` : ""}
-            </Text>
-            <Text
-              style={[
-                type.label,
-                { color: p.kind === "refund" ? brand.greenDeep : P.ink },
-              ]}
-            >
-              {p.kind === "refund" ? "+" : ""}
-              {money(p.amountCents)}
-            </Text>
-          </View>
-        ))}
-        {m.dueCents > 0 && (
-          <>
-            <Text style={[styles.text, { color: P.beet }]}>
-              A price went up by {money(m.dueCents)} and your card was declined.
-            </Text>
-            <Button icon="card-outline" onPress={changeCard}>
-              {`Update card to pay ${money(m.dueCents)}`}
-            </Button>
-          </>
-        )}
-      </View>
-    );
-  }
-  // Group still open: card saved, nothing held or charged yet.
-  return (
-    <View style={[styles.card, { gap: 6 }]}>
-      <View style={styles.between}>
-        <Text style={styles.label}>About {money(total)} for your shares</Text>
-        <Pressable accessibilityRole="button" onPress={changeCard} hitSlop={8}>
-          <Text style={[type.label, { color: P.carrot, fontSize: 13 }]}>
-            Change card
-          </Text>
-        </Pressable>
-      </View>
-      <Text style={type.mono}>
-        Includes the 5% service fee. Nothing is charged now: a hold is placed
-        when shares close ({when(o.deadline)}) and charged when shopping starts.
-      </Text>
-    </View>
   );
 }

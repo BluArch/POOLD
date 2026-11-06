@@ -39,9 +39,14 @@ export default function Order() {
     if (v?.isOrganizer && v.order.status === "draft") setMode("organize");
   }, [v?.isOrganizer, v?.order.status]);
 
-  // During pickup, check every few seconds so a confirmed code shows up
-  // on the buyer's phone (and the organizer's) without pulling to refresh.
-  const live = v?.order.status === "ready" || v?.order.status === "shopping";
+  // Scheduled closure, recovery funding and pickup changes arrive from workers.
+  // Refresh the order too, so its controls follow the independently polled payment state.
+  const live =
+    !!v &&
+    (["open", "locked", "shopping", "ready"].includes(v.order.status) ||
+      (v.order.status === "completed" &&
+        !!v.payouts &&
+        !v.payouts.releases.some((p) => p.kind === "fees")));
   useEffect(() => {
     if (!live) return;
     const timer = setInterval(() => void r.refresh(), 5000);

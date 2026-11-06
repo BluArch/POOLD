@@ -1,0 +1,6 @@
+{
+  "checks": [
+    "Real localhost:4000 development API returns 200 for mine and organizing; existing groups render without test API forwarding",
+    "Both-failed and either-failed list requests show one Retry, no empty state and no fabricated zero counts; Retry refreshes both sources and recovers"
+  ]
+}

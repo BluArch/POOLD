@@ -145,20 +145,22 @@ export const feeFor = (sharesCents: number, organizer = false) =>
  * - Buyers pay the Costco price + 15% markup, then a 5% service fee on that
  *   total (the fee covers card processing).
  * - The organizer is reimbursed the Costco cost of buyers' shares before
- *   shopping, and earns max($30, 10% of that grocery cost) after hand-out.
- * - POOLD keeps the rest. That breaks even at about $205 of groceries.
+ *   shopping, and earns max($50, 10% of that grocery cost) after hand-out.
+ * - POOLD keeps the rest. That breaks even at about $333 for four paying members of groceries.
  */
 export const MARKUP_RATE = 0.15;
-export const REWARD_MIN_CENTS = 3000;
+export const REWARD_MIN_CENTS = 5000;
 export const REWARD_RATE = 0.1;
-export const BREAK_EVEN_CENTS = 20415;
+export const BREAK_EVEN_CENTS = 33305;
 /** Costco cost of some shares of a pack. */
 export const shareCost = (
   priceCents: number,
   quantity: number,
   sharesPerPack: number,
 ) =>
-  Math.floor((priceCents * quantity + Math.floor(sharesPerPack / 2)) / sharesPerPack);
+  Math.floor(
+    (priceCents * quantity + Math.floor(sharesPerPack / 2)) / sharesPerPack,
+  );
 /** What a buyer pays for shares that cost this much at Costco (before the fee). */
 export const withMarkup = (costCents: number) =>
   Math.round(costCents * (1 + MARKUP_RATE));
@@ -368,7 +370,7 @@ export interface Member {
   dueCents: number;
   /** Payments and refunds, newest first. */
   payments: Payment[];
-  /** The card hold placed when shares closed, if any. */
+  /** Legacy hold summary; scheduled payments always return null. */
   hold: Hold | null;
 }
 /** Money held on a buyer's card when shares close, charged when shopping starts. */
@@ -398,6 +400,7 @@ export interface Payment {
   note: string | null;
 }
 export interface OrderView {
+  paymentFundingStatus?: string;
   order: OrderSummary;
   items: Item[];
   myClaims: Claim[];
@@ -419,15 +422,17 @@ export interface OrderView {
   canRate: boolean;
 }
 export interface PayoutSummary {
+  /** Minimum promised by this run's frozen reward policy. */
+  rewardMinimumCents?: number;
   /** Held on buyers' cards, not charged yet. */
   authorizedCents: number;
   /** Charged to buyers, minus refunds. */
   collectedCents: number;
   releasedCents: number;
   heldCents: number;
-  /** Costco cost of buyers' shares: reimbursed when shopping starts. */
+  /** Member grocery funding, paid before shopping. */
   groceryCents: number;
-  /** max($30, 10% of groceryCents), paid after hand-out. */
+  /** max($50, 10% of groceryCents), paid after hand-out. */
   rewardCents: number;
   releases: {
     /** "fees" is the organizer's reward. */
@@ -962,3 +967,76 @@ export const resetPasswordInput = z.object({
     .max(128, "Your password must be 128 characters or fewer."),
   native: z.boolean().optional(),
 });
+
+/** Shared scheduled-payment state for the demo and Stripe sandbox. No card holds. */
+export interface PaymentWorkflow {
+  provider: "demo" | "stripe_test";
+  livePaymentsEnabled: false;
+  policyVersion: string;
+  cardReady: boolean;
+  approval: string;
+  status: string;
+  viable: boolean;
+  issues: string[];
+  warnings: string[];
+  quote: null | {
+    groceryCents: number;
+    markupCents: number;
+    serviceFeeCents: number;
+    feeTaxCents: number;
+    totalCents: number;
+    fingerprint: string;
+    deadline: string;
+    lines: {
+      itemId: string;
+      name: string;
+      quantity: number;
+      totalCents: number;
+    }[];
+  };
+  retry: null | {
+    id: string;
+    status: string;
+    amountCents: number;
+    fingerprint: string;
+    until: string;
+  };
+  instructions: {
+    id: string;
+    status: string;
+    total_cents: number;
+    refunded_cents: number;
+    purpose: string;
+  }[];
+  offers: { id: string; name: string; itemId: string; remaining: number }[];
+  takeoverUntil: string | null;
+  supplements: {
+    id: string;
+    name: string;
+    quantity: number;
+    amountCents: number;
+    fingerprint: string;
+    groceryCents: number;
+    markupCents: number;
+    serviceFeeCents: number;
+    status: string;
+  }[];
+  supplementProposals: {
+    id: string;
+    item_id: string;
+    new_price_cents: number;
+    status: string;
+  }[];
+  organizer: null | {
+    advanceRecovery?: null | {
+      amount_cents: number;
+      recovered_cents: number;
+      status: string;
+    };
+    groceryCents: number;
+    rewardCents: number;
+    revision: number;
+    confirmationNeeded: boolean;
+    payouts: { purpose: string; amount_cents: number; status: string }[];
+  };
+}

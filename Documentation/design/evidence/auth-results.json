@@ -1,0 +1,7 @@
+{
+  "checks": [
+    "Signup/password visibility, six visual OTP boxes, one autofill input, cooldown and verification",
+    "Invite continuation survives signup and OTP"
+  ],
+  "errors": []
+}
