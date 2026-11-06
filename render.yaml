@@ -6,7 +6,7 @@ services:
     runtime: node
     plan: free
     region: oregon
-    autoDeployTrigger: off
+    autoDeployTrigger: checksPass
     buildCommand: npm ci --include=dev && npm run build:host
     startCommand: npm run start:host
     healthCheckPath: /api/health
