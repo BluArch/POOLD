@@ -198,7 +198,7 @@ footer,
 
 .steps {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 18px;
   margin-top: 50px;
 }
@@ -816,5 +816,56 @@ footer {
   .mvp-content > p:not(.section-label):not(.mvp-note) {
     margin-left: auto;
     margin-right: auto;
+  }
+}
+
+.trust-note {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-top: 24px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--dark-green);
+}
+
+.payment-section {
+  background: var(--yellow);
+}
+
+.payment-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+  margin-top: 45px;
+}
+
+.payment-card {
+  background: rgba(255, 255, 255, 0.7);
+  padding: 28px;
+  border-radius: 18px;
+}
+
+.payment-card span {
+  color: var(--orange);
+  font-family: "Outfit", sans-serif;
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+.payment-card h3 {
+  font-family: "Outfit", sans-serif;
+  font-size: 1.4rem;
+  margin: 14px 0 10px;
+}
+
+.payment-card p {
+  line-height: 1.65;
+  margin-bottom: 0;
+}
+
+@media (max-width: 900px) {
+  .payment-grid {
+    grid-template-columns: 1fr;
   }
 }
