@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { setup } from "./helpers.js";
+import { setup, draft } from "./helpers.js";
 import { runJobs } from "../src/jobs.js";
 import { execute } from "../src/db.js";
 
@@ -11,7 +11,9 @@ test("no-shows: organizer who never shops is cancelled and buyers are refunded",
   const h = await setup();
   const { call, tokens: t } = h;
   try {
-    const id = await h.create();
+    const input = draft();
+    input.items[0].priceCents = 200000;
+    const id = await h.create(input);
     await h.publish(id);
     const v = (await call(`/orders/${id}`, "GET", undefined, t.maya)).body;
     await h.claim(id, t.maya);
@@ -19,13 +21,13 @@ test("no-shows: organizer who never shops is cancelled and buyers are refunded",
     // Shares closed and the buyer was charged when shopping started...
     const status = (s: string) =>
       call(`/orders/${id}/status`, "POST", { status: s }, t.maya);
-    await status("locked");
     await call(
       `/orders/${id}/items/${v.items[0].id}`,
       "PATCH",
       { shortfallDecision: "proceed" },
       t.maya,
     );
+    await h.closeFunding(id);
     await status("shopping");
     assert.ok(
       (await call(`/orders/${id}`, "GET", undefined, t.jordan)).body.mine
@@ -55,7 +57,9 @@ test("no-shows: a buyer who misses pickup forfeits after the hold", async () => 
   const h = await setup();
   const { call, tokens: t } = h;
   try {
-    const id = await h.create();
+    const input = draft();
+    input.items[0].priceCents = 150000;
+    const id = await h.create(input);
     await h.publish(id);
     let v = (await call(`/orders/${id}`, "GET", undefined, t.maya)).body;
     const iid = v.items[0].id;
@@ -63,13 +67,13 @@ test("no-shows: a buyer who misses pickup forfeits after the hold", async () => 
     await h.claim(id, t.jordan, 2);
     const status = (s: string) =>
       call(`/orders/${id}/status`, "POST", { status: s }, t.maya);
-    await status("locked");
     await call(
       `/orders/${id}/items/${iid}`,
       "PATCH",
       { shortfallDecision: "proceed" },
       t.maya,
     );
+    await h.closeFunding(id);
     await status("shopping");
     await call(`/orders/${id}/items/${iid}`, "PATCH", { bought: true }, t.maya);
     const photo = "data:image/png;base64,iVBORw0KGgo=";
@@ -90,7 +94,10 @@ test("no-shows: a buyer who misses pickup forfeits after the hold", async () => 
     assert.ok(jordan.noShowAt);
     // The buyer's payment stays with the organizer.
     assert.equal(jordan.paidCents, paid);
-    assert.equal(org.payouts.heldCents, 0);
+    assert.equal(
+      org.payouts.releasedCents,
+      org.payouts.groceryCents + org.payouts.rewardCents,
+    );
     const profile = (await call("/profile", "GET", undefined, t.jordan)).body;
     assert.ok(profile.noShows >= 1);
   } finally {

@@ -1,3 +1,4 @@
+import { invalidateApprovals } from "./payments/engine.js";
 import { Router } from "express";
 import type { Pool } from "mysql2/promise";
 import { orderInput, itemInput } from "@poold/contracts";
@@ -6,6 +7,7 @@ import { rows, first, execute, transaction } from "./db.js";
 import { notify, notifyMembers } from "./notifications.js";
 import { verified } from "./auth.js";
 import { fail } from "./errors.js";
+import { validateLocation, validateLinkedOrderOffers } from "./catalogue.js";
 import {
   getOrder,
   owner,
@@ -117,12 +119,19 @@ export function orders(db: Pool) {
           "NOT_DRAFT",
           "Only a draft can be edited. Published items can be updated from the dashboard.",
         );
+      const storeSnapshot = await validateLocation(
+        c,
+        b.retailerId,
+        b.locationId,
+      );
       await execute(
         c,
-        `UPDATE orders SET name=?,store=?,kind=?,visibility=?,deadline=?,purchase_at=?,pickup_at=?,pickup_end=?,pickup_location=?,pickup_lat=?,pickup_lng=?,max_members=?,cadence=?,revision=revision+1 WHERE id=?`,
+        `UPDATE orders SET name=?,store=?,retailer_id=?,location_id=?,kind=?,visibility=?,deadline=?,purchase_at=?,pickup_at=?,pickup_end=?,pickup_location=?,pickup_lat=?,pickup_lng=?,max_members=?,cadence=?,revision=revision+1 WHERE id=?`,
         [
           b.name,
-          b.store,
+          storeSnapshot ?? b.store,
+          b.retailerId,
+          b.locationId,
           b.kind,
           b.visibility,
           new Date(b.deadline),
@@ -138,7 +147,7 @@ export function orders(db: Pool) {
         ],
       );
       await execute(c, "DELETE FROM order_items WHERE order_id=?", [o.id]);
-      await insertItems(c, o.id, b.items);
+      await insertItems(c, o.id, b.items, b.retailerId, b.locationId);
     });
     res.json({ ok: true });
   });
@@ -173,7 +182,8 @@ export function orders(db: Pool) {
       );
       if (Number(count.n) >= 30)
         fail(409, "TOO_MANY_ITEMS", "A group can have up to 30 items.");
-      await insertItems(c, o.id, [b.item]);
+      await insertItems(c, o.id, [b.item], o.retailer_id, o.location_id);
+      await invalidateApprovals(c, o.id);
       await execute(c, "UPDATE orders SET revision=revision+1 WHERE id=?", [
         o.id,
       ]);
@@ -233,6 +243,7 @@ export function orders(db: Pool) {
           "ITEMS_REQUIRED",
           "Add items before publishing. Quick splits need one item.",
         );
+      await validateLinkedOrderOffers(c, o.id, new Date(o.purchase_at));
       await execute(
         c,
         "UPDATE orders SET status='open',published_at=UTC_TIMESTAMP(3) WHERE id=?",

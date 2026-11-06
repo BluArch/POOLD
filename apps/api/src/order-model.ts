@@ -1,3 +1,4 @@
+import { quoteFor } from "./payments/engine.js";
 import { ledger, payoutSummary } from "./payments.js";
 import type {
   OrderInput,
@@ -7,11 +8,12 @@ import type {
   Claim,
   Member,
 } from "@poold/contracts";
-import { feeFor, shareCost, withMarkup } from "@poold/contracts";
+import { shareCost, withMarkup } from "@poold/contracts";
 import type { DB } from "./db.js";
 import { first, rows, execute, iso } from "./db.js";
 import { fail } from "./errors.js";
 import { hash, id, token } from "./security.js";
+import { resolveItems, validateLocation } from "./catalogue.js";
 export async function getOrder(
   db: DB,
   oid: string,
@@ -63,18 +65,20 @@ export async function summary(
 ): Promise<OrderSummary> {
   const stats = await first(
     db,
-    `SELECT (SELECT COUNT(*) FROM memberships WHERE order_id=?) AS member_count,(SELECT name FROM users WHERE id=?) AS organizer_name,EXISTS(SELECT 1 FROM memberships WHERE order_id=? AND user_id=?) AS joined,(SELECT COALESCE(SUM(c.quantity),0) FROM share_claims c JOIN order_items i ON i.id=c.item_id WHERE i.order_id=? AND c.user_id=?) AS my_shares,(SELECT GROUP_CONCAT(name ORDER BY name SEPARATOR ' · ') FROM order_items WHERE order_id=? AND available=TRUE) AS preview`,
-    [o.id, o.organizer_id, o.id, uid, o.id, uid, o.id],
+    `SELECT (SELECT COUNT(*) FROM memberships WHERE order_id=?) AS member_count,(SELECT name FROM users WHERE id=?) AS organizer_name,EXISTS(SELECT 1 FROM memberships WHERE order_id=? AND user_id=?) AS joined,(SELECT COALESCE(SUM(c.quantity),0) FROM share_claims c JOIN order_items i ON i.id=c.item_id WHERE i.order_id=? AND c.user_id=?) AS my_shares,(SELECT GROUP_CONCAT(name ORDER BY name SEPARATOR ' · ') FROM order_items WHERE order_id=? AND available=TRUE) AS preview,EXISTS(SELECT 1 FROM order_items WHERE order_id=? AND price_source='demo') AS demo_prices`,
+    [o.id, o.organizer_id, o.id, uid, o.id, uid, o.id, o.id],
   );
   const previews = await rows(
     db,
-    `SELECT name,category,price_cents,shares_per_pack,unit FROM order_items WHERE order_id=? AND available=TRUE ORDER BY name,id LIMIT 4`,
+    `SELECT name,category,price_cents,shares_per_pack,unit,price_source FROM order_items WHERE order_id=? AND available=TRUE ORDER BY name,id LIMIT 4`,
     [o.id],
   );
   return {
     id: o.id,
     name: o.name,
     store: o.store,
+    retailerId: o.retailer_id ?? null,
+    locationId: o.location_id ?? null,
     kind: o.kind,
     visibility: o.visibility,
     status: o.status,
@@ -94,6 +98,7 @@ export async function summary(
     publishedAt: o.published_at ? iso(o.published_at) : null,
     organizerRating: await organizerRating(db, o.organizer_id),
     preview: stats.preview ?? "",
+    demoPrices: !!stats.demo_prices,
     previewItems: previews.map((i) => ({
       name: i.name,
       category: i.category,
@@ -148,6 +153,10 @@ export async function orderView(
       packUnits: i.pack_units ?? null,
       shareUnits: i.share_units ?? null,
       catalogKey: i.catalog_key ?? null,
+      offerId: i.offer_id ?? null,
+      offerRevision:
+        i.offer_revision === null ? null : Number(i.offer_revision),
+      priceSource: i.price_source,
     };
   });
   // Buyers pay the marked-up price; the organizer pays Costco's at the store.
@@ -164,9 +173,16 @@ export async function orderView(
     available: i.available,
     portioning: i.portioning,
   });
+  const financial = await quoteFor(db, o, uid);
   const myClaims = items
     .filter((i) => i.mine > 0)
-    .map((i) => claimFor(i, i.mine, uid));
+    .map((i) => {
+      const c = claimFor(i, i.mine, uid);
+      const line = financial.details.lines.find((l) => l.itemId === i.id);
+      return line
+        ? { ...c, estimateCents: line.groceryCents + line.markupCents }
+        : c;
+    });
   const ms = await rows(
     db,
     `SELECT m.*,u.name,u.photo,(u.verified AND u.email LIKE '%@uvic.ca') AS university,(SELECT COUNT(*) FROM memberships mc JOIN orders oc ON oc.id=mc.order_id WHERE mc.user_id=u.id AND (mc.collected_at IS NOT NULL OR oc.organizer_id=u.id) AND oc.status='completed') AS completed FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.order_id=?`,
@@ -177,7 +193,9 @@ export async function orderView(
   const demoOrganizer =
     o.organizer_id === uid &&
     o.status === "ready" &&
-    !!(await first(db, "SELECT demo FROM users WHERE id=? AND demo=TRUE", [uid]));
+    !!(await first(db, "SELECT demo FROM users WHERE id=? AND demo=TRUE", [
+      uid,
+    ]));
   const members: Member[] = [];
   for (const m of ms) {
     if (o.organizer_id !== uid && m.user_id !== uid) continue;
@@ -236,18 +254,19 @@ export async function orderView(
     "SELECT code FROM collection_tokens WHERE order_id=? AND user_id=? AND used_at IS NULL",
     [o.id, uid],
   );
+  const funding = await first(
+    db,
+    "SELECT status FROM funding_batches WHERE order_id=?",
+    [o.id],
+  );
   return {
+    paymentFundingStatus: funding?.status,
     order: await summary(db, o, uid),
     items,
     myClaims,
     myEstimateCents: myClaims.reduce((n, c) => n + c.estimateCents, 0),
-    myFeeCents: feeFor(
-      myClaims.reduce((n, c) => n + c.estimateCents, 0),
-      o.organizer_id === uid,
-    ),
-    ...(o.organizer_id === uid
-      ? { payouts: await payoutSummary(db, o) }
-      : {}),
+    myFeeCents: financial.mine?.serviceFeeCents ?? 0,
+    ...(o.organizer_id === uid ? { payouts: await payoutSummary(db, o) } : {}),
     proof: await proofFor(db, o, uid),
     myRating: rating ? Number(rating.stars) : null,
     canRate:
@@ -262,16 +281,19 @@ export async function orderView(
   };
 }
 export async function insertDraft(db: DB, b: OrderInput, uid: string) {
+  const storeSnapshot = await validateLocation(db, b.retailerId, b.locationId);
   const oid = id(),
     raw = token();
   await execute(
     db,
-    `INSERT INTO orders(id,organizer_id,name,store,kind,visibility,deadline,purchase_at,pickup_at,pickup_end,pickup_location,pickup_lat,pickup_lng,public_pickup,max_members,cadence,invite_hash,invite_token) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO orders(id,organizer_id,name,store,retailer_id,location_id,kind,visibility,deadline,purchase_at,pickup_at,pickup_end,pickup_location,pickup_lat,pickup_lng,public_pickup,max_members,cadence,invite_hash,invite_token) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       oid,
       uid,
       b.name,
-      b.store,
+      storeSnapshot ?? b.store,
+      b.retailerId ?? null,
+      b.locationId ?? null,
       b.kind,
       b.visibility,
       new Date(b.deadline),
@@ -288,7 +310,7 @@ export async function insertDraft(db: DB, b: OrderInput, uid: string) {
       raw,
     ],
   );
-  await insertItems(db, oid, b.items);
+  await insertItems(db, oid, b.items, b.retailerId, b.locationId);
   await execute(db, "INSERT INTO memberships(order_id,user_id) VALUES(?,?)", [
     oid,
     uid,
@@ -299,11 +321,13 @@ export async function insertItems(
   db: DB,
   oid: string,
   items: OrderInput["items"],
+  retailerId: string | null = null,
+  locationId: string | null = null,
 ) {
-  for (const i of items)
+  for (const i of await resolveItems(db, items, retailerId, locationId))
     await execute(
       db,
-      `INSERT INTO order_items(id,order_id,name,category,pack_label,share_label,shares_per_pack,pack_count,price_cents,original_price_cents,reference_share_cents,storage,portioning,unit,pack_units,share_units,catalog_key) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO order_items(id,order_id,name,category,pack_label,share_label,shares_per_pack,pack_count,price_cents,original_price_cents,reference_share_cents,storage,portioning,unit,pack_units,share_units,catalog_key,catalogue_product_id,offer_id,offer_revision,price_observation_id,price_basis,price_source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         id(),
         oid,
@@ -322,6 +346,12 @@ export async function insertItems(
         i.packUnits ?? null,
         i.shareUnits ?? null,
         i.catalogKey ?? null,
+        i.catalogueProductId ?? null,
+        i.offerId ?? null,
+        i.offerRevision ?? null,
+        i.priceObservationId ?? null,
+        i.priceBasis ?? null,
+        i.priceSource ?? (i.catalogKey ? "legacy" : "manual"),
       ],
     );
 }

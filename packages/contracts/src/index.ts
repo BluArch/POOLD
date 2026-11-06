@@ -23,6 +23,8 @@ export const itemInput = z
     packUnits: z.number().int().min(1).max(10000).nullable().default(null),
     shareUnits: z.number().int().min(1).max(10000).nullable().default(null),
     catalogKey: z.string().trim().max(60).nullable().default(null),
+    offerId: z.string().uuid().nullable().default(null),
+    offerRevision: z.number().int().positive().nullable().default(null),
   })
   .superRefine((i, ctx) => {
     const given = [i.unit, i.packUnits, i.shareUnits].filter((v) => v !== null);
@@ -53,6 +55,8 @@ export const orderInput = z
   .object({
     name: text(80),
     store: text(80),
+    retailerId: z.string().trim().max(40).nullable().default(null),
+    locationId: z.string().uuid().nullable().default(null),
     kind: z.enum(["community", "quick"]).default("community"),
     visibility: z.enum(["public", "private"]).default("public"),
     deadline: z.iso.datetime({ offset: true }),
@@ -87,6 +91,11 @@ export const orderInput = z
       ctx.addIssue({
         code: "custom",
         message: "Provide both pickup coordinates or neither.",
+      });
+    if ((b.retailerId === null) !== (b.locationId === null))
+      ctx.addIssue({
+        code: "custom",
+        message: "Choose both a store and branch.",
       });
   });
 export const claimsInput = z
@@ -136,20 +145,22 @@ export const feeFor = (sharesCents: number, organizer = false) =>
  * - Buyers pay the Costco price + 15% markup, then a 5% service fee on that
  *   total (the fee covers card processing).
  * - The organizer is reimbursed the Costco cost of buyers' shares before
- *   shopping, and earns max($30, 10% of that grocery cost) after hand-out.
- * - POOLD keeps the rest. That breaks even at about $205 of groceries.
+ *   shopping, and earns max($50, 10% of that grocery cost) after hand-out.
+ * - POOLD keeps the rest. That breaks even at about $333 for four paying members of groceries.
  */
 export const MARKUP_RATE = 0.15;
-export const REWARD_MIN_CENTS = 3000;
+export const REWARD_MIN_CENTS = 5000;
 export const REWARD_RATE = 0.1;
-export const BREAK_EVEN_CENTS = 20415;
+export const BREAK_EVEN_CENTS = 33305;
 /** Costco cost of some shares of a pack. */
 export const shareCost = (
   priceCents: number,
   quantity: number,
   sharesPerPack: number,
 ) =>
-  Math.floor((priceCents * quantity + Math.floor(sharesPerPack / 2)) / sharesPerPack);
+  Math.floor(
+    (priceCents * quantity + Math.floor(sharesPerPack / 2)) / sharesPerPack,
+  );
 /** What a buyer pays for shares that cost this much at Costco (before the fee). */
 export const withMarkup = (costCents: number) =>
   Math.round(costCents * (1 + MARKUP_RATE));
@@ -216,6 +227,8 @@ export interface OrderSummary {
   id: string;
   name: string;
   store: string;
+  retailerId?: string | null;
+  locationId?: string | null;
   kind: "community" | "quick";
   visibility: "public" | "private";
   status: Status;
@@ -244,7 +257,9 @@ export interface OrderSummary {
     priceCents: number;
     sharesPerPack: number;
     unit: string | null;
+    priceSource?: "legacy" | "manual" | "demo" | "retailer";
   }[];
+  demoPrices?: boolean;
   cadence: "once" | "weekly" | "monthly";
   revision: number;
 }
@@ -278,6 +293,48 @@ export interface Item {
   packUnits: number | null;
   shareUnits: number | null;
   catalogKey: string | null;
+  offerId: string | null;
+  offerRevision: number | null;
+  priceSource?: "legacy" | "manual" | "demo" | "retailer";
+}
+export interface Retailer {
+  id: string;
+  name: string;
+  country: string;
+  locationCount: number;
+}
+export interface StoreLocation {
+  id: string;
+  retailerId: string;
+  name: string;
+  address: string;
+  city: string;
+  region: string;
+  channel: string;
+  verifiedAt: string | null;
+}
+export interface CatalogueResult {
+  id: string;
+  offerId: string;
+  revision: number;
+  retailerId: string;
+  locationId: string;
+  name: string;
+  brand: string | null;
+  category: string;
+  packLabel: string;
+  unit: string | null;
+  packUnits: number | null;
+  unitDetail: string | null;
+  priceCents: number;
+  priceBasis: "pack" | "each" | "100g" | "kg" | "100ml" | "litre";
+  availability: "unknown" | "available" | "unavailable";
+  observedAt: string | null;
+  priceSource: "demo" | "retailer";
+}
+export interface CataloguePage {
+  items: CatalogueResult[];
+  nextCursor: string | null;
 }
 export interface Claim {
   itemId: string;
@@ -313,7 +370,7 @@ export interface Member {
   dueCents: number;
   /** Payments and refunds, newest first. */
   payments: Payment[];
-  /** The card hold placed when shares closed, if any. */
+  /** Legacy hold summary; scheduled payments always return null. */
   hold: Hold | null;
 }
 /** Money held on a buyer's card when shares close, charged when shopping starts. */
@@ -343,6 +400,7 @@ export interface Payment {
   note: string | null;
 }
 export interface OrderView {
+  paymentFundingStatus?: string;
   order: OrderSummary;
   items: Item[];
   myClaims: Claim[];
@@ -364,15 +422,17 @@ export interface OrderView {
   canRate: boolean;
 }
 export interface PayoutSummary {
+  /** Minimum promised by this run's frozen reward policy. */
+  rewardMinimumCents?: number;
   /** Held on buyers' cards, not charged yet. */
   authorizedCents: number;
   /** Charged to buyers, minus refunds. */
   collectedCents: number;
   releasedCents: number;
   heldCents: number;
-  /** Costco cost of buyers' shares: reimbursed when shopping starts. */
+  /** Member grocery funding, paid before shopping. */
   groceryCents: number;
-  /** max($30, 10% of groceryCents), paid after hand-out. */
+  /** max($50, 10% of groceryCents), paid after hand-out. */
   rewardCents: number;
   releases: {
     /** "fees" is the organizer's reward. */
@@ -480,6 +540,7 @@ export const CATEGORIES = [
 
 /** "1 box", "6 boxes": units are stored in the singular. */
 export const plural = (n: number, unit: string): string => {
+  if (["g", "kg", "mL", "L"].includes(unit)) return `${n} ${unit}`;
   if (n === 1) return `${n} ${unit}`;
   if (/(s|x|ch|sh)$/.test(unit)) return `${n} ${unit}es`;
   if (/[^aeiou]y$/.test(unit)) return `${n} ${unit.slice(0, -1)}ies`;
@@ -810,7 +871,9 @@ export const CATALOG: CatalogItem[] = [
 
 /** Default member instructions for handing out sealed units. */
 export const portioningFor = (shareUnits: number, unit: string) =>
-  `Give ${plural(shareUnits, unit)} per share. Don’t open the packaging.`;
+  unit === "g" || unit === "mL"
+    ? `Measure ${plural(shareUnits, unit)} per share into clean containers. Confirm the purchased quantity.`
+    : `Give ${plural(shareUnits, unit)} per share. Don’t open the packaging.`;
 
 /** Builds the item fields the API needs from a pack and share size. */
 export const itemFromUnits = (b: {
@@ -825,6 +888,8 @@ export const itemFromUnits = (b: {
   packCount: number;
   storage: string;
   catalogKey?: string | null;
+  offerId?: string | null;
+  offerRevision?: number | null;
 }): ItemInput => ({
   name: b.name,
   category: b.category,
@@ -832,6 +897,8 @@ export const itemFromUnits = (b: {
   packUnits: b.packUnits,
   shareUnits: b.shareUnits,
   catalogKey: b.catalogKey ?? null,
+  offerId: b.offerId ?? null,
+  offerRevision: b.offerRevision ?? null,
   packLabel:
     `${plural(b.packUnits, b.unit)}${b.unitDetail ? ` (${b.unitDetail})` : ""}`.slice(
       0,
@@ -900,3 +967,76 @@ export const resetPasswordInput = z.object({
     .max(128, "Your password must be 128 characters or fewer."),
   native: z.boolean().optional(),
 });
+
+/** Shared scheduled-payment state for the demo and Stripe sandbox. No card holds. */
+export interface PaymentWorkflow {
+  provider: "demo" | "stripe_test";
+  livePaymentsEnabled: false;
+  policyVersion: string;
+  cardReady: boolean;
+  approval: string;
+  status: string;
+  viable: boolean;
+  issues: string[];
+  warnings: string[];
+  quote: null | {
+    groceryCents: number;
+    markupCents: number;
+    serviceFeeCents: number;
+    feeTaxCents: number;
+    totalCents: number;
+    fingerprint: string;
+    deadline: string;
+    lines: {
+      itemId: string;
+      name: string;
+      quantity: number;
+      totalCents: number;
+    }[];
+  };
+  retry: null | {
+    id: string;
+    status: string;
+    amountCents: number;
+    fingerprint: string;
+    until: string;
+  };
+  instructions: {
+    id: string;
+    status: string;
+    total_cents: number;
+    refunded_cents: number;
+    purpose: string;
+  }[];
+  offers: { id: string; name: string; itemId: string; remaining: number }[];
+  takeoverUntil: string | null;
+  supplements: {
+    id: string;
+    name: string;
+    quantity: number;
+    amountCents: number;
+    fingerprint: string;
+    groceryCents: number;
+    markupCents: number;
+    serviceFeeCents: number;
+    status: string;
+  }[];
+  supplementProposals: {
+    id: string;
+    item_id: string;
+    new_price_cents: number;
+    status: string;
+  }[];
+  organizer: null | {
+    advanceRecovery?: null | {
+      amount_cents: number;
+      recovered_cents: number;
+      status: string;
+    };
+    groceryCents: number;
+    rewardCents: number;
+    revision: number;
+    confirmationNeeded: boolean;
+    payouts: { purpose: string; amount_cents: number; status: string }[];
+  };
+}

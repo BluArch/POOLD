@@ -5,7 +5,9 @@ test("Phase D: lock, resolve shortfall, shop, pack, collect once, complete and r
   const h = await setup();
   const { call, tokens: t } = h;
   try {
-    const id = await h.create();
+    const input = draft();
+    input.items[0].priceCents = 100000;
+    const id = await h.create(input);
     await h.publish(id);
     const view = async (auth = t.maya) =>
       (await call(`/orders/${id}`, "GET", undefined, auth)).body;
@@ -28,24 +30,15 @@ test("Phase D: lock, resolve shortfall, shop, pack, collect once, complete and r
     await h.claim(id, t.maya);
     // Nothing is charged before shares close.
     assert.equal((await view(t.jordan)).mine.paidCents, 0);
-    assert.equal((await status("locked")).status, 200);
-    // Closing places a hold on the buyer's card; still no charge.
-    let buyer = await view(t.jordan);
-    assert.equal(buyer.mine.hold.status, "authorized");
-    assert.equal(
-      buyer.mine.hold.amountCents,
-      buyer.myEstimateCents + buyer.myFeeCents,
-    );
-    assert.equal(buyer.mine.paidCents, 0);
-    // The organizer doesn't pay through the app.
-    assert.equal((await view()).mine.hold, null);
-    assert.equal((await status("shopping")).body.error.code, "SHORTFALL");
+    // Cover the remaining pack at the store before buyers approve their exact basket.
     await change({ shortfallDecision: "proceed" });
+    await h.closeFunding(id);
+    const buyer = await view(t.jordan);
+    assert.equal(buyer.mine.hold, null);
+    assert.ok(buyer.mine.paidCents > 0);
+    assert.equal((await view()).mine.hold, null);
     assert.equal((await status("shopping")).status, 200);
-    // Starting shopping charges the hold.
-    buyer = await view(t.jordan);
-    assert.equal(buyer.mine.hold.status, "captured");
-    assert.equal(buyer.mine.paidCents, buyer.mine.hold.amountCents);
+    assert.equal((await view(t.jordan)).mine.paidCents, buyer.mine.paidCents);
     assert.equal((await status("ready")).status, 409);
     assert.equal(
       (
@@ -150,10 +143,10 @@ test("Phase D: lock, resolve shortfall, shop, pack, collect once, complete and r
     let org = await view();
     assert.equal(org.payouts.releasedCents, org.payouts.groceryCents);
     assert.ok(org.payouts.collectedCents > org.payouts.groceryCents);
-    // After hand-out the organizer earns max($30, 10% of groceries).
+    // After hand-out the organizer earns max($50, 10% of groceries).
     assert.equal(
       org.payouts.rewardCents,
-      Math.max(3000, Math.round(org.payouts.groceryCents * 0.1)),
+      Math.max(5000, Math.round(org.payouts.groceryCents * 0.1)),
     );
     assert.equal((await status("completed")).status, 200);
     org = await view();

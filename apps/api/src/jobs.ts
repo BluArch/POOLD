@@ -1,10 +1,10 @@
+import { runPaymentReconciliation } from "./payments/reconcile.js";
 import type { Pool } from "mysql2/promise";
 import { transaction, rows, first, execute } from "./db.js";
 import { notifyMembers } from "./notifications.js";
 import {
   settleAll,
-  placeHolds,
-  dropFailedHolds,
+  closeScheduledPayments,
   releaseRemaining,
 } from "./payments.js";
 import { markNoShow, GRACE_MS, closeProblem } from "./fulfillment.js";
@@ -53,7 +53,7 @@ export async function runJobs(db: Pool, now = new Date()) {
         );
         await once(
           `organizer-no-show:${o.id}`,
-          `${o.name} was cancelled because the organizer didn’t complete the run. Everyone was refunded in full.`,
+          `${o.name} was cancelled because the organizer didn’t complete the run. Successful payments are being refunded; check the group for confirmation.`,
         );
         return;
       }
@@ -72,10 +72,8 @@ export async function runJobs(db: Pool, now = new Date()) {
         events++;
         return;
       }
-      if (o.status === "locked") await dropFailedHolds(c, o, now);
       if (o.status === "open" && deadline <= time) {
-        // Deadline: close and hold everyone's cards, unless there's nothing
-        // to split (no other buyers, or the organizer isn't buying).
+        // Freeze the scheduled purchase; only current approvals can create charges.
         const problem = await closeProblem(c, o);
         if (problem) {
           await execute(c, "UPDATE orders SET status='cancelled' WHERE id=?", [
@@ -93,10 +91,10 @@ export async function runJobs(db: Pool, now = new Date()) {
         await execute(c, "UPDATE orders SET status='locked' WHERE id=?", [
           o.id,
         ]);
-        await placeHolds(c, o);
+        await closeScheduledPayments(c, o, now);
         await once(
           `deadline-close:${o.id}`,
-          `${o.name}: the deadline passed. Shares are closed and your card has a hold for your shares.`,
+          `${o.name}: the deadline passed. Shares are closed. Current approved baskets are collected before grocery funding; payment action may be required.`,
         );
       } else if (o.status === "open" && deadline - time <= 24 * 3600000)
         await once(
@@ -115,5 +113,8 @@ export async function runJobs(db: Pool, now = new Date()) {
     "DELETE FROM email_verifications WHERE expires_at<? AND resend_at<=?",
     [now, now],
   );
+  await runPaymentReconciliation(db, process.env.NODE_ENV === "production", {
+    now,
+  });
   return { events };
 }

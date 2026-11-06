@@ -195,20 +195,10 @@ test("Requests: creators edit/delete their own, groups take requests while open"
     const updates = (await call("/notifications", "GET", undefined, t.jordan))
       .body;
     assert.ok(updates.some((u: any) => /was added to/.test(u.message)));
-    // Closed groups stop taking requests and new items.
+    // Deadline closure also stops requests while current approvals are unresolved.
     await h.claim(oid, t.maya);
     await h.claim(oid, t.jordan);
-    assert.equal(
-      (
-        await call(
-          `/orders/${oid}/status`,
-          "POST",
-          { status: "locked" },
-          t.maya,
-        )
-      ).status,
-      200,
-    );
+    await h.closeFunding(oid);
     assert.equal(
       (await call(`/orders/${oid}/requests`, "POST", { name: "Tea" }, t.alex))
         .status,
