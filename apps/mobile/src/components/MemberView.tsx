@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, Linking, Pressable, Image } from "react-native";
+import { View, Text, Linking, Pressable, Image, Modal } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import {
@@ -436,8 +436,10 @@ function ShareChooser({
           })),
         }),
       });
+      setConfirming(false);
       await onSaved();
     });
+  const [confirming, setConfirming] = useState(false);
   const addCard = () =>
     router.push({ pathname: "/(tabs)/pay/[id]", params: { id: v.order.id } });
 
@@ -477,51 +479,26 @@ function ShareChooser({
               <Button icon="card-outline" onPress={addCard}>
                 Add a card to join
               </Button>
-            ) : (
+            ) : releasing ? (
               <Button
-                disabled={
-                  a.busy ||
-                  !changed ||
-                  (!releasing && !attending) ||
-                  (releasing && v.myClaims.length === 0)
-                }
-                danger={releasing && v.myClaims.length > 0}
+                disabled={a.busy || v.myClaims.length === 0}
+                danger={v.myClaims.length > 0}
                 onPress={() => void save()}
               >
                 {a.busy
                   ? "Saving…"
-                  : releasing
-                    ? v.myClaims.length
-                      ? "Release all my shares"
-                      : "Choose at least one share"
-                    : v.myClaims.length
-                      ? "Save changes"
-                      : v.isOrganizer
-                        ? "Add my share"
-                        : "Join group"}
+                  : v.myClaims.length
+                    ? "Release all my shares"
+                    : "Choose at least one share"}
+              </Button>
+            ) : (
+              <Button disabled={!changed} onPress={() => setConfirming(true)}>
+                {v.myClaims.length ? "Review changes" : "Continue"}
               </Button>
             )
           }
         >
-          {!releasing && (
-            <View>
-              <Check
-                label="I can attend this pickup time"
-                value={attending}
-                onChange={setAttending}
-              />
-            </View>
-          )}
-          {!releasing && (
-            <Text style={[type.mono, { fontSize: 12 }]}>
-              {v.isOrganizer
-                ? "You pay for your share at the store. Nothing is charged in the app."
-                : card.data
-                  ? `Nothing is charged now. ${card.data.brand} •••• ${card.data.last4} gets a hold when shares close ${when(v.order.deadline)} and is charged when shopping starts.`
-                  : "Nothing is charged now. Your card gets a hold when shares close and is charged when shopping starts."}
-            </Text>
-          )}
-          {!!a.error && (
+          {!!a.error && !confirming && (
             <View style={styles.note}>
               <ErrorText message={a.error} />
               <Button secondary onPress={() => void onSaved()}>
@@ -531,7 +508,172 @@ function ShareChooser({
           )}
         </ReceiptPanel>
       </ScreenFooter>
+      <ConfirmPickup
+        visible={confirming}
+        view={v}
+        shares={selected.reduce((n, i) => n + (qty[i.id] ?? 0), 0)}
+        total={total + fee}
+        card={card.data ?? null}
+        attending={attending}
+        onAttending={setAttending}
+        busy={a.busy}
+        error={a.error}
+        onClose={() => setConfirming(false)}
+        onConfirm={() => void save()}
+      />
     </>
+  );
+}
+
+/**
+ * Last step before joining: the screen dims and a sheet asks the buyer to
+ * confirm they can make the pickup, with the place and time spelled out.
+ */
+function ConfirmPickup({
+  visible,
+  view: v,
+  shares,
+  total,
+  card,
+  attending,
+  onAttending,
+  busy,
+  error,
+  onClose,
+  onConfirm,
+}: {
+  visible: boolean;
+  view: OrderView;
+  shares: number;
+  total: number;
+  card: SavedCard | null;
+  attending: boolean;
+  onAttending: (v: boolean) => void;
+  busy: boolean;
+  error: string;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const o = v.order;
+  const day = new Date(o.pickupAt).toLocaleDateString("en-CA", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+  const time = (d: string) =>
+    new Date(d).toLocaleTimeString("en-CA", {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  const joining = v.myClaims.length === 0;
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View style={{ flex: 1, justifyContent: "flex-end" }}>
+        {/* Darkened screen: tap it to go back and keep choosing. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Go back to choosing shares"
+          onPress={onClose}
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(16,16,16,0.6)",
+          }}
+        />
+        <View
+          accessibilityViewIsModal
+          style={{
+            width: "100%",
+            maxWidth: 640,
+            alignSelf: "center",
+            backgroundColor: P.paper,
+            borderTopLeftRadius: 28,
+            borderTopRightRadius: 28,
+            padding: 20,
+            paddingBottom: 28,
+            gap: 14,
+          }}
+        >
+          <View
+            style={{
+              alignSelf: "center",
+              width: 40,
+              height: 5,
+              borderRadius: 3,
+              backgroundColor: P.line,
+            }}
+          />
+          <Text accessibilityRole="header" style={styles.h2}>
+            {joining ? "Can you make this pickup?" : "Confirm your changes"}
+          </Text>
+          <View
+            style={{
+              backgroundColor: brand.yellowSoft,
+              borderRadius: 18,
+              padding: 14,
+              gap: 12,
+            }}
+          >
+            <View style={[styles.row, { alignItems: "flex-start" }]}>
+              <Ionicons name="calendar-outline" size={22} color={P.ink} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>{day}</Text>
+                <Text style={styles.text}>
+                  {time(o.pickupAt)} – {time(o.pickupEnd)}
+                </Text>
+              </View>
+            </View>
+            <View style={[styles.row, { alignItems: "flex-start" }]}>
+              <Ionicons name="location-outline" size={22} color={P.ink} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>{o.pickupLocation}</Text>
+                <Text style={type.mono}>
+                  Meet {o.organizerName.split(" ")[0]} and show your pickup code
+                </Text>
+              </View>
+            </View>
+          </View>
+          <View style={styles.between}>
+            <Text style={styles.text}>
+              {shares} {shares === 1 ? "share" : "shares"}
+              {v.isOrganizer ? "" : " + 5% fee"}
+            </Text>
+            <Text style={type.total}>{money(total)}</Text>
+          </View>
+          <Text style={[type.mono, { fontSize: 12 }]}>
+            {v.isOrganizer
+              ? "You pay for your share at the store. Nothing is charged in the app."
+              : `Nothing is charged now. ${card ? `${card.brand} •••• ${card.last4}` : "Your card"} gets a hold when shares close and is charged when shopping starts. Missing pickup means losing your bag after 24 hours.`}
+          </Text>
+          <Check
+            label="I can attend this pickup time"
+            value={attending}
+            onChange={onAttending}
+          />
+          <ErrorText message={error} />
+          <Button disabled={busy || !attending} onPress={onConfirm}>
+            {busy
+              ? "Saving…"
+              : joining
+                ? v.isOrganizer
+                  ? "Add my share"
+                  : "Join group"
+                : "Save changes"}
+          </Button>
+          <Button secondary onPress={onClose}>
+            Back
+          </Button>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
