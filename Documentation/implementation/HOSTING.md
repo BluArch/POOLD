@@ -10,6 +10,29 @@ Live October 30, 2026: **Render Free** for Express and the Expo web app, **Aiven
 
 This preserves the current MySQL transactions and constraints. Firebase Functions requires the billing-enabled Blaze plan, and Firestore would require a database rewrite. Supabase uses PostgreSQL, requiring a migration. Vercel Hobby's daily cron limit does not fit the existing minute-based reminders. Koyeb's current signup/billing requirements make its free instance less straightforward for a new account.
 
+## Continuous deployment from main
+
+The pipeline is defined in `.github/workflows/ci.yml` and `render.yaml`:
+
+1. Every push to `main` and every pull request runs GitHub Actions with Node 24 and a disposable MySQL 8.4 database. It installs locked dependencies, checks types and lint, applies every SQL migration twice to check repeat execution, runs API integration tests, builds the hosted API/web bundle, and smoke-tests the hosted start command, database health, JavaScript bundle and deep links.
+2. After verification passes on `main`, GitHub Actions calls the existing Render service's private deploy hook with `ref=<tested commit SHA>`. Pull requests never deploy or receive this secret. Production deploy jobs are serialized. Render's own auto-deploy setting stays **Off** to prevent duplicate releases; automatic deployment is owned by GitHub Actions. This also supports the existing public-repository source without requiring broader GitHub app permissions. No production database credentials are stored in GitHub Actions.
+3. Render builds both the Express API and Expo web app with `npm ci --include=dev && npm run build:host`. It starts with `npm run start:host`, which applies pending migrations to the Aiven database using Render's private `DATABASE_URL` and verified TLS before starting Express. The migration lock serializes execution, and `schema_migrations` skips versions already applied. A migration error stops startup.
+4. Render checks `/api/health` before switching traffic to the new instance. GitHub waits for `/api/version` to report the exact tested SHA, then verifies live MySQL health, the web JavaScript bundle, and deep links. A release that does not become live within 17 minutes fails the deployment job. The URL remains `https://poold.onrender.com`.
+
+For the existing service, confirm the live dashboard matches the Blueprint: branch `main`, repository-root working directory, no build filters, the build/start commands above, `/api/health`, and **Auto-Deploy: Off**. Store the service's existing private deploy-hook URL as the repository Actions secret `RENDER_DEPLOY_HOOK`; this grants the workflow permission to trigger deployments of this service. Do not put the hook in Git or logs. Editing `render.yaml` alone does not update a manually configured service. Never configure a paid pre-deploy job for this Free service.
+
+Add new migrations as new, uniquely named `.sql` files in `db/migrations`; never rewrite an applied migration. Keep schema changes compatible with the previous app version because it can still be serving traffic while migrations run. MySQL DDL auto-commits: failed partial migrations need a reviewed repair; application rollback does not undo schema changes. CI checks fresh installation and repeat execution, not every possible production-data upgrade.
+
+Only changes committed and pushed to `main` deploy. Local uncommitted changes are excluded. Existing Render secrets remain server-side; new credentials or external provider setup still need explicit configuration in Render. Native iOS/Android binaries require a separate mobile release; this pipeline updates the hosted web app and API. Background jobs use the new API code but still pause when Render Free sleeps.
+
+### Hosted class demo
+
+This hosted service explicitly enables the public Maya demo with both `DEMO_ENABLED=true` and `HOSTED_DEMO_ENABLED=true` in Render. Startup seeds Maya plus three supporting sample actors and four sample groups. Anyone can use the shared Maya demo account through the demo sign-in button. Production cookies, TLS, ordinary UVic sign-in rules, and email delivery remain enabled; the development email outbox is never exposed in production.
+
+To disable the hosted demo, set both flags to `false` and redeploy. Production defaults to denying demo access without the separate `HOSTED_DEMO_ENABLED=true` opt-in. Existing Maya demo sessions are ignored once demo access is disabled. Startup refreshes expired sample groups while retaining demo groups in progress; it does not delete ordinary user accounts or orders. Any one-time data cleanup is performed separately, never as a migration or deployment step.
+
+To verify a release, inspect the GitHub `CI and deploy` run and Render deploy logs for the same commit, confirm the `Applied ...` / `Schema ready (...)` startup output, and run `node scripts/check-host.mjs https://poold.onrender.com` (wake the Free service first if needed). For application rollback, select a previously successful deploy in Render only after checking compatibility with the current schema.
+
 ## Cloud setup progress — October 30, 2026
 
 - Aiven service `poold-mysql` exists on the **Free** tier, running MySQL 8.4.11 in DigitalOcean San Francisco.
@@ -38,7 +61,7 @@ These are currently $0 tiers within their limits, suited to the course MVP/demo.
 
 1. Sign in to Render and Aiven. Create an Aiven **MySQL Free** service; avoid trial/paid plans. Use a fresh database, without local development accounts. Copy the MySQL URI and download the project CA certificate. Use a dedicated application database/user when available; the deployment user needs the schema permissions required by the migrations.
 2. Create a Brevo Free account, verify the sender, and activate transactional email. Copy its SMTP login and **SMTP key**. Render Free blocks ports 25, 465 and 587; the Blueprint selects Brevo's **2525**, with mandatory STARTTLS in POOLD's mailer. Verify connection/authentication and actual recipient delivery after deployment. Never configure unencrypted SMTP.
-3. The hosting changes are on GitHub branch `codex/render-aiven-hosting`. Create a Render Blueprint from POOLD, that branch, and `render.yaml`. Keep the service on **Free**. Automatic deploys are disabled; deploy reviewed revisions manually. Alternatively, a manually configured web service must use that branch, repository-root working directory, the build/start commands below, and `/api/health` as its health check.
+3. Create a Render Blueprint from POOLD, branch `main`, and `render.yaml`. Keep the service on **Free** with Render auto-deploy **Off** and the GitHub Actions deploy hook configured as described above. Alternatively, a manually configured web service must use `main`, repository-root working directory, the build/start commands below, `/api/health` as its health check, and the same hook-driven deployment setup.
 4. Supply the private server variables when prompted:
 
    | Variable | Value |
@@ -60,7 +83,7 @@ These are currently $0 tiers within their limits, suited to the course MVP/demo.
 6. Render supplies `RENDER_EXTERNAL_URL`, used as the allowed browser origin and invitation URL. Web requests use `/api`, keeping HttpOnly cookies on the same origin. For a custom domain, set `APP_ORIGIN` and `PUBLIC_APP_URL` to its HTTPS origin. `STATIC_WEB_DIR=../mobile/dist` is relative to the API workspace used by the start command.
 7. Native Expo builds need `EXPO_PUBLIC_API_URL=https://poold.onrender.com/api` in the mobile environment, followed by a client restart/rebuild. The existing local-development mobile `.env` is retained. The hosted web build already uses same-origin `/api`. Never put private credentials in `EXPO_PUBLIC_*` variables.
 
-Production disables demo login and the development outbox. Optional FCM stays disabled until its own credentials and native configuration are supplied. In-app notifications remain available.
+Production always disables the development outbox. Demo login requires the explicit hosted-demo opt-in described above. Optional FCM stays disabled until its own credentials and native configuration are supplied. In-app notifications remain available.
 
 ## Verification
 

@@ -1,0 +1,110 @@
+name: CI and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify app and migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: ci-${{ github.ref }}
+      cancel-in-progress: true
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci_root_only
+          MYSQL_DATABASE: poold_test
+          MYSQL_USER: poold
+          MYSQL_PASSWORD: ci_test_only
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      CI: "true"
+      NODE_ENV: test
+      DATABASE_URL: mysql://poold:ci_test_only@127.0.0.1:3306/poold_test
+      TEST_DATABASE_URL: mysql://poold:ci_test_only@127.0.0.1:3306/poold_test
+      DATABASE_SSL: "false"
+      DEMO_ENABLED: "false"
+      FCM_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Prepare non-secret test environment
+        run: cp .env.example .env
+      - name: Install dependencies
+        run: npm ci --include=dev
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Apply all migrations to a fresh test database
+        run: npm run db:migrate
+      - name: Verify migrations can run again without reapplying
+        run: npm run db:migrate
+      - name: API integration tests
+        run: npm test
+      - name: Build the hosted API and web app
+        run: npm run build:host
+      - name: Smoke-test the hosted start command
+        env:
+          PORT: "4000"
+          STATIC_WEB_DIR: ../mobile/dist
+        run: |
+          npm run start:host > "$RUNNER_TEMP/poold-host.log" 2>&1 &
+          host_pid=$!
+          trap 'kill "$host_pid" 2>/dev/null || true; cat "$RUNNER_TEMP/poold-host.log"' EXIT
+          curl --fail --retry 30 --retry-connrefused --retry-delay 2 http://127.0.0.1:4000/api/health
+          node scripts/check-host.mjs http://127.0.0.1:4000
+
+  deploy:
+    name: Deploy and verify production
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: poold-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: Skip a commit superseded on main
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          current_main=$(gh api repos/BluArch/POOLD/git/ref/heads/main --jq .object.sha)
+          if [ "$current_main" = "$GITHUB_SHA" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "A newer main commit has its own pipeline; skipping this release."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Deploy the tested commit and wait for it to go live
+        if: steps.latest.outputs.deploy == 'true'
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+          DEPLOY_COMMIT: ${{ github.sha }}
+        run: node scripts/deploy-render.mjs
+      - name: Verify live database, web bundle, and deep links
+        if: steps.latest.outputs.deploy == 'true'
+        run: node scripts/check-host.mjs https://poold.onrender.com

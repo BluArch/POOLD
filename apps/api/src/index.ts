@@ -5,13 +5,14 @@ import { createApp } from "./app.js";
 import { seed } from "./seed.js";
 const db = database();
 await db.query("SELECT 1");
-// Local demo: refresh the sample groups on every start, so everyone who signs
-// up (and Maya) always sees open groups to browse.
+// Refresh sample groups only when demo mode is explicitly enabled. Hosted demos
+// require a separate opt-in while retaining production cookies, TLS, and mail.
 if (
-  process.env.NODE_ENV !== "production" &&
-  process.env.DEMO_ENABLED === "true"
+  process.env.DEMO_ENABLED === "true" &&
+  (process.env.NODE_ENV !== "production" ||
+    process.env.HOSTED_DEMO_ENABLED === "true")
 )
-  await seed(db).catch((e) => console.error("Demo seed failed:", e));
+  await seed(db);
 const app = createApp(db);
 const server = app.listen(Number(process.env.PORT ?? 4000), "0.0.0.0", () =>
   console.log(`POOLD API ready on port ${process.env.PORT ?? 4000}`),

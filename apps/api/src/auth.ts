@@ -68,7 +68,7 @@ export async function publicUser(db: Pool, uid: string): Promise<User> {
 /** Missed pickups in 90 days that block joining for 30 days. */
 export const NO_SHOW_LIMIT = 3;
 
-/** POOLD is UVic-only. Seeded demo accounts work locally, never in production. */
+/** Ordinary hosted sign-in remains UVic-only; Maya uses the explicit demo route. */
 export const allowedEmail = (email: string, production: boolean) =>
   isUvicEmail(email) ||
   (!production && email.toLowerCase().endsWith("@demo.poold.invalid"));
@@ -151,8 +151,11 @@ export function auth(
         [hash(raw)],
       );
       if (s) {
-        req.user = await publicUser(db, s.user_id);
-        req.sessionHash = hash(raw);
+        const user = await publicUser(db, s.user_id);
+        if (!user.demo || options.demo) {
+          req.user = user;
+          req.sessionHash = hash(raw);
+        }
       }
     }
     next();
@@ -270,7 +273,7 @@ export function auth(
           uid,
         ]))
       )
-        fail(404, "NO_DEMO", "Run the development seed first.");
+        fail(404, "NO_DEMO", "The demo account is not ready yet.");
       res.json(await session(req, res, uid));
     });
   router.post("/auth/logout", async (req, res) => {
