@@ -143,7 +143,7 @@ test("payments: declined cards get 2 hours, shopping waits, then shares drop", a
   }
 });
 
-test("organizer rules: own share, buyers needed, 2 runs a week, card before joining", async () => {
+test("organizer rules: own share, buyers needed, card before joining", async () => {
   const h = await setup();
   const { call, tokens: t } = h;
   try {
@@ -173,18 +173,19 @@ test("organizer rules: own share, buyers needed, 2 runs a week, card before join
       t.priya,
     );
     assert.equal(r.body.error.code, "CARD_REQUIRED");
-    // Two groups a week: this was one, the next is two, the third is refused.
-    const second = await h.create();
-    await h.publish(second);
-    const third = await h.create();
-    const refused = await call(`/orders/${third}/publish`, "POST", {}, t.maya);
-    assert.equal(refused.body.error.code, "WEEKLY_LIMIT");
+    // No weekly cap: an organizer can publish several groups back to back.
+    for (let n = 0; n < 3; n++) {
+      const more = await h.create();
+      assert.equal(
+        (await call(`/orders/${more}/publish`, "POST", {}, t.maya)).status,
+        200,
+      );
+    }
   } finally {
     await execute(
       h.db,
       "INSERT IGNORE INTO payment_methods(user_id,brand,last4,outcome) VALUES('demo-priya','Visa','4242','ok')",
     );
-    await execute(h.db, "UPDATE orders SET published_at=NULL");
     await h.close();
   }
 });

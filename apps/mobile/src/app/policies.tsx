@@ -22,7 +22,6 @@ const SECTIONS: Section[] = [
     title: "Who organizes",
     points: [
       "Organizers split a trip they’re making anyway. They must take at least one share themselves.",
-      "Each organizer can start up to 2 groups a week.",
       "Organizers pay for their own share at the store, so they don’t pay anything in the app.",
       "If nobody else joins by the deadline, the group is cancelled automatically. Nothing is charged.",
     ],

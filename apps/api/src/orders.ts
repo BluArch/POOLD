@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { Pool } from "mysql2/promise";
-import { orderInput, itemInput, WEEKLY_RUN_LIMIT } from "@poold/contracts";
+import { orderInput, itemInput } from "@poold/contracts";
 import { z } from "zod";
 import { rows, first, execute, transaction } from "./db.js";
 import { notify, notifyMembers } from "./notifications.js";
@@ -232,19 +232,6 @@ export function orders(db: Pool) {
           400,
           "ITEMS_REQUIRED",
           "Add items before publishing. Quick splits need one item.",
-        );
-      // Organizers run groups for their own shopping, so they can publish a
-      // limited number per week.
-      const recent = await first(
-        c,
-        "SELECT COUNT(*) AS n FROM orders WHERE organizer_id=? AND status<>'cancelled' AND published_at > UTC_TIMESTAMP(3) - INTERVAL 7 DAY",
-        [req.user!.id],
-      );
-      if (Number(recent.n) >= WEEKLY_RUN_LIMIT)
-        fail(
-          409,
-          "WEEKLY_LIMIT",
-          `You can start up to ${WEEKLY_RUN_LIMIT} groups a week. POOLD is for splitting your own shopping trips, not running a business.`,
         );
       await execute(
         c,

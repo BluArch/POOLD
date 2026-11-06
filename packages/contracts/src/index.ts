@@ -128,8 +128,6 @@ export const isUvicEmail = (email: string) =>
 
 /** Buyers pay a 5% service fee to the organizer; organizers pay nothing in the app. */
 export const FEE_RATE = 0.05;
-/** An organizer can publish this many groups in any 7 days. */
-export const WEEKLY_RUN_LIMIT = 2;
 export const feeFor = (sharesCents: number, organizer = false) =>
   organizer ? 0 : Math.round(sharesCents * FEE_RATE);
 
@@ -207,7 +205,7 @@ export interface OrderSummary {
   joined: boolean;
   /** Shares the signed-in user has claimed in this group. */
   myShares: number;
-  /** When the group was published (counts toward the weekly limit). */
+  /** When the group was published. */
   publishedAt: string | null;
   /** Organizer's average rating from buyers, and how many ratings. */
   organizerRating: { average: number; count: number } | null;
