@@ -46,7 +46,7 @@ function App() {
 
           <div className="hero-image">
             <img
-              src="/images/Communities_Page2.png"
+              src="/images/Communities_Page3.png"
               alt="POOLD community orders screen"
             />
           </div>
@@ -318,7 +318,7 @@ function App() {
           <div className="screenshots">
             <div className="screenshot-card">
               <img
-                src="/images/Communities_Page2.png"
+                src="/images/Communities_Page3.png"
                 alt="POOLD communities page"
               />
               <p>Discover community orders</p>
@@ -326,7 +326,7 @@ function App() {
 
             <div className="screenshot-card">
               <img
-                src="/images/Group_Creation2.png"
+                src="/images/Group_Creation3.png"
                 alt="POOLD group creation screen"
               />
               <p>Create a group order</p>
@@ -334,7 +334,7 @@ function App() {
 
             <div className="screenshot-card">
               <img
-                src="/images/Review_orders2.png"
+                src="/images/Review_orders3.png"
                 alt="POOLD review orders screen"
               />
               <p>Review individual orders</p>
@@ -342,7 +342,7 @@ function App() {
 
             <div className="screenshot-card">
               <img
-                src="/images/Pickup_Orders2.png"
+                src="/images/Pickup_Orders3.png"
                 alt="POOLD pickup screen"
               />
               <p>Coordinate pickup</p>
@@ -378,7 +378,7 @@ function App() {
 
           <div className="mvp-phone">
             <img
-              src="/images/Community_Example2.png"
+              src="/images/Community_Example3.png"
               alt="POOLD mobile app"
             />
           </div>
