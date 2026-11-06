@@ -275,6 +275,9 @@ export function ItemEditor({
   const set = (change: Partial<ItemDraft>) => onChange({ ...d, ...change });
 
   if (!d.chosen) {
+    const catalogueItems = [
+      ...new Map(results.map((item) => [item.id, item])).values(),
+    ];
     const query = search.trim().toLowerCase();
     const legacyMatches = !retailerId
       ? CATALOG.filter(
@@ -294,9 +297,12 @@ export function ItemEditor({
           placeholder="Kraft Dinner, toothpaste, cans…"
         />
         <Text style={styles.muted}>
-          Branch catalogue prices are estimates until checked at purchase. Add
-          an item manually if it is missing.
+          Choose an item to set its share size and review the estimated price.
+          Add an item manually if it is missing.
         </Text>
+        {catalogueItems.some((item) => item.priceSource === "demo") && (
+          <Text style={styles.muted}>Sample items for the class demo.</Text>
+        )}
         <View
           style={{
             borderWidth: 1,
@@ -315,14 +321,14 @@ export function ItemEditor({
             >
               <Text style={styles.h3}>{item.name}</Text>
               <Text style={styles.muted}>
-                {plural(item.packUnits, item.unit)} · {money(item.priceCents)} ·{" "}
-                Older catalogue estimate
+                {plural(item.packUnits, item.unit)} ({item.unitDetail}) ·{" "}
+                {item.category}
               </Text>
             </Pressable>
           ))}
-          {results.map((c, i) => (
+          {catalogueItems.map((c, i) => (
             <Pressable
-              key={c.offerId}
+              key={c.id}
               accessibilityRole="button"
               accessibilityLabel={`Choose ${c.name}`}
               onPress={() => onChange(draftFromOffer(c))}
@@ -339,17 +345,7 @@ export function ItemEditor({
                 {c.name}
               </Text>
               <Text style={styles.muted}>
-                {c.packLabel} · {money(c.priceCents)} · {c.category} ·{" "}
-                {c.availability === "unknown"
-                  ? "Stock unconfirmed"
-                  : "Listed available"}
-              </Text>
-              <Text style={styles.muted}>
-                {c.priceSource === "demo"
-                  ? "Class-project demo estimate · stock unverified"
-                  : c.observedAt
-                    ? `Price checked ${new Date(c.observedAt).toLocaleDateString("en-CA")}`
-                    : "Price check unavailable"}
+                {c.packLabel} · {c.category}
               </Text>
             </Pressable>
           ))}
