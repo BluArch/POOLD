@@ -987,12 +987,14 @@ function HandOutBag({
         !readOnly && (
           <>
             <Field
-              label={`${m.name}’s collection code`}
-              autoCapitalize="characters"
+              label={`${m.name}’s pickup code`}
+              keyboardType="number-pad"
+              inputMode="numeric"
+              maxLength={7}
               autoCorrect={false}
               value={code}
-              onChangeText={setCode}
-              placeholder="From their phone"
+              onChangeText={(t) => setCode(t.replace(/[^\d ]/g, ""))}
+              placeholder="6 digits from their phone"
             />
             <Button
               disabled={a.busy || !code.trim()}

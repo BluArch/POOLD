@@ -839,7 +839,7 @@ export function PickupDetails({
                 textAlign: "center",
               }}
             >
-              {v.collectionCode.match(/.{1,4}/g)?.join(" ")}
+              {v.collectionCode.replace(/^(\d{3})(\d{3})$/, "$1 $2")}
             </Text>
           </View>
         ) : (

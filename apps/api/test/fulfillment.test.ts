@@ -86,7 +86,7 @@ test("Phase D: lock, resolve shortfall, shop, pack, collect once, complete and r
       undefined,
     );
     const member = await view(t.jordan);
-    assert.match(member.collectionCode, /^[A-F0-9]{20}$/);
+    assert.match(member.collectionCode, /^\d{6}$/);
     assert.equal((await change({ priceCents: 1500 })).status, 409);
     assert.equal((await status("completed")).status, 409);
     assert.equal(
