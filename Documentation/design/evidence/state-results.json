@@ -1,7 +1,0 @@
-{
-  "checks": [
-    "Buyer closed-share receipt and collected pickup state",
-    "Full group shows note and no claim controls to a nonmember",
-    "Offline resource error and Retry recover the list"
-  ]
-}

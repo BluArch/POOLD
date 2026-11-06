@@ -1,9 +1,0 @@
-{
-  "checks": [
-    "Start offers only group orders and private invites; Discover has no quick-split filter",
-    "Legacy quick=true create link saves a standard group order with multiple-item editing available",
-    "Old standalone requests route redirects to My groups",
-    "Browser suggestion saves to /orders/{id}/requests, appears in the same group, and has the correct orderId; no standalone request-list calls"
-  ],
-  "errors": []
-}

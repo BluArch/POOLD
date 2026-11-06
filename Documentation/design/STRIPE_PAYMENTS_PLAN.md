@@ -169,7 +169,7 @@ For `D > $500`, `W = 0.10D`, so with four payers `R = 0.0559825D - 1.70`. The re
 
 Rows round unrounded planning components independently, so displayed figures can differ by a cent when summed. Exact member charges and provider fees must instead reconcile in cents. Both the $200 and $300 rows are underfunded and cannot be charged under the normal viability rule. At $400, $60 markup plus $23 service fee produces $83 revenue above grocery cost; subtracting the $50 reward and approximately $22.46 in provider fees leaves approximately $10.54. None of these retained amounts is a claim of net profit after all business expenses.
 
-Earlier examples with variable service fees, a universal $50 reward, an operating allowance, monthly overhead or ten payers do not define the current policy. See [the research](ORGANIZER_MARKUP_RESEARCH.md) for historical comparisons and [the catalogue plan](CATALOGUE_AND_PRICING_PLAN.md) for store-data implementation; this section governs the revised payment pricing if those documents differ.
+Earlier examples with variable service fees, a universal $50 reward, an operating allowance, monthly overhead or ten payers do not define the current policy. See [the catalogue plan](CATALOGUE_AND_PRICING_PLAN.md) for store-data implementation; this section governs the current payment pricing.
 
 ## 4. Order and payment workflow
 
