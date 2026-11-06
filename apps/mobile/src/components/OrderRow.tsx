@@ -22,13 +22,22 @@ export function OrderRow({
   showStatus = false,
   organize = false,
   byYou = false,
+  join = false,
 }: {
   order: OrderSummary;
   showStatus?: boolean;
   organize?: boolean;
   /** Buyer view of a group you organize and also take shares in. */
   byYou?: boolean;
+  /** Show a clear "Join group" button (buyer Home). */
+  join?: boolean;
 }) {
+  const open = () =>
+    router.push({
+      pathname: "/(tabs)/order/[id]",
+      params: { id: o.id, ...(organize ? { view: "organize" } : {}) },
+    });
+  const full = o.memberCount >= o.maxMembers && !o.joined;
   const items =
     o.previewItems ??
     o.preview
@@ -72,29 +81,21 @@ export function OrderRow({
             ? "organizer"
             : "buyer";
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`Open ${o.name}`}
-      onPress={() =>
-        router.push({
-          pathname: "/(tabs)/order/[id]",
-          params: { id: o.id, ...(organize ? { view: "organize" } : {}) },
-        })
-      }
-      style={({ pressed }) => ({
+    <View
+      style={{
         marginBottom: 12,
-        opacity: pressed ? 0.8 : 1,
-        transform: [{ scale: pressed ? 0.99 : 1 }],
-      })}
+        backgroundColor: P.paper,
+        borderRadius: 20,
+        padding: 16,
+        gap: 12,
+        ...shadow,
+      }}
     >
-      <View
-        style={{
-          backgroundColor: P.paper,
-          borderRadius: 20,
-          padding: 16,
-          gap: 12,
-          ...shadow,
-        }}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${o.name}`}
+        onPress={open}
+        style={({ pressed }) => ({ gap: 12, opacity: pressed ? 0.75 : 1 })}
       >
         <View style={[styles.between, { alignItems: "center" }]}>
           <View style={[styles.row, { gap: 10, flex: 1 }]}>
@@ -168,8 +169,43 @@ export function OrderRow({
           <Meta icon="time-outline">{day(o.pickupAt)}</Meta>
           <Meta icon="location-outline">{o.pickupLocation}</Meta>
         </View>
-      </View>
-    </Pressable>
+      </Pressable>
+      {join && o.status === "open" && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            o.joined ? `View your shares in ${o.name}` : `Join ${o.name}`
+          }
+          disabled={full}
+          onPress={open}
+          style={({ pressed }) => ({
+            minHeight: 46,
+            borderRadius: 999,
+            flexDirection: "row",
+            gap: 8,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: o.joined ? P.paper : P.carrot,
+            borderWidth: o.joined ? 1.5 : 0,
+            borderColor: P.line,
+            opacity: full ? 0.45 : pressed ? 0.85 : 1,
+          })}
+        >
+          <Ionicons
+            name={o.joined ? "bag-check-outline" : "add-circle-outline"}
+            size={19}
+            color={o.joined ? P.ink : P.white}
+          />
+          <Text style={[type.label, { color: o.joined ? P.ink : P.white }]}>
+            {full
+              ? "Group is full"
+              : o.joined
+                ? "View my shares"
+                : "Join group"}
+          </Text>
+        </Pressable>
+      )}
+    </View>
   );
 }
 

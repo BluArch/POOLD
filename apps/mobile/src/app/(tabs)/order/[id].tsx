@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { View, Text } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { type OrderView } from "@poold/contracts";
 import {
@@ -8,10 +8,8 @@ import {
   styles,
   useResource,
   ResourceState,
-  ErrorText,
   when,
 } from "../../../components/ui";
-import { post } from "../../../api";
 import { Badge, StatusTrack, STATUS_TEXT } from "../../../components/Market";
 import { palette as P, type, deadlineLabel } from "../../../theme";
 import { Segmented } from "../../../components/Sections";
@@ -22,11 +20,10 @@ import { useRole } from "../../../role";
 type Mode = "organize" | "member";
 
 export default function Order() {
-  const { id, invite, view, paid } = useLocalSearchParams<{
+  const { id, invite, view } = useLocalSearchParams<{
     id: string;
     invite?: string;
     view?: string;
-    paid?: string;
   }>();
   const role = useRole();
   const r = useResource<OrderView>(
@@ -42,17 +39,6 @@ export default function Order() {
     if (v?.isOrganizer && v.order.status === "draft") setMode("organize");
   }, [v?.isOrganizer, v?.order.status]);
 
-  // Back from Stripe test checkout: ask the server to confirm, once.
-  const [payError, setPayError] = useState("");
-  useEffect(() => {
-    if (!paid?.startsWith("cs_test_")) return;
-    void post(`/orders/${id}/pay/confirm`, { sessionId: paid })
-      .catch((e) => setPayError((e as Error).message))
-      .finally(() => {
-        router.setParams({ paid: undefined });
-        void r.refresh();
-      });
-  }, [paid]);
   // During pickup, check every few seconds so a confirmed code shows up
   // on the buyer's phone (and the organizer's) without pulling to refresh.
   const live = v?.order.status === "ready" || v?.order.status === "shopping";
@@ -96,7 +82,6 @@ export default function Order() {
       refreshing={r.loading}
     >
       <ResourceState resource={r} />
-      <ErrorText message={payError} />
       {v && o && (
         <>
           <View style={[styles.card, { gap: 12 }]}>
@@ -120,7 +105,11 @@ export default function Order() {
             />
           )}
           {showOrganizer ? (
-            <OrganizerView view={v} refresh={r.refresh} />
+            <OrganizerView
+              view={v}
+              refresh={r.refresh}
+              onMyShare={() => setMode("member")}
+            />
           ) : (
             <MemberView view={v} refresh={r.refresh} invite={invite} />
           )}

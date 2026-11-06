@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { Pool } from "mysql2/promise";
-import { orderInput, itemInput } from "@poold/contracts";
+import { orderInput, itemInput, WEEKLY_RUN_LIMIT } from "@poold/contracts";
 import { z } from "zod";
 import { rows, first, execute, transaction } from "./db.js";
 import { notify, notifyMembers } from "./notifications.js";
@@ -15,7 +15,6 @@ import {
   insertItems,
   validateFuture,
 } from "./order-model.js";
-import { claimWishlist, wishlistPublished } from "./wishlists.js";
 export function orders(db: Pool) {
   const r = Router();
   r.use("/orders", verified);
@@ -97,21 +96,7 @@ export function orders(db: Pool) {
   r.post("/orders", async (req, res) => {
     const b = orderInput.parse(req.body);
     validateFuture(b);
-    // A group can start from a buyers' wishlist; it's linked so everyone who
-    // wanted it hears when it opens.
-    const wishlistId = z.string().uuid().optional().parse(req.body.wishlistId);
-    const oid = await transaction(db, async (c) => {
-      const created = await insertDraft(c, b, req.user!.id);
-      if (wishlistId)
-        await claimWishlist(
-          c,
-          wishlistId,
-          created,
-          req.user!.id,
-          req.user!.name,
-        );
-      return created;
-    });
+    const oid = await transaction(db, (c) => insertDraft(c, b, req.user!.id));
     res.status(201).json({ id: oid });
   });
   r.put("/orders/:id", async (req, res) => {
@@ -248,8 +233,24 @@ export function orders(db: Pool) {
           "ITEMS_REQUIRED",
           "Add items before publishing. Quick splits need one item.",
         );
-      await execute(c, "UPDATE orders SET status='open' WHERE id=?", [o.id]);
-      await wishlistPublished(c, o);
+      // Organizers run groups for their own shopping, so they can publish a
+      // limited number per week.
+      const recent = await first(
+        c,
+        "SELECT COUNT(*) AS n FROM orders WHERE organizer_id=? AND status<>'cancelled' AND published_at > UTC_TIMESTAMP(3) - INTERVAL 7 DAY",
+        [req.user!.id],
+      );
+      if (Number(recent.n) >= WEEKLY_RUN_LIMIT)
+        fail(
+          409,
+          "WEEKLY_LIMIT",
+          `You can start up to ${WEEKLY_RUN_LIMIT} groups a week. POOLD is for splitting your own shopping trips, not running a business.`,
+        );
+      await execute(
+        c,
+        "UPDATE orders SET status='open',published_at=UTC_TIMESTAMP(3) WHERE id=?",
+        [o.id],
+      );
     });
     res.json({ ok: true });
   });

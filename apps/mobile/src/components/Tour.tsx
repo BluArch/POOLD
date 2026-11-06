@@ -32,9 +32,9 @@ export const TOUR_STEPS: Step[] = [
     text: "Buying is for joining groups. Organizing is for running one. Switch here any time.",
   },
   {
-    target: "home-sections",
-    title: "Find what you need",
-    text: "Groups that already have an organizer, and wishlists still looking for one. Start a wishlist if nothing fits.",
+    target: "join-button",
+    title: "Join a group",
+    text: "Pick your shares and save a card. Nothing is charged until shares close, so you can change your mind.",
   },
   {
     target: "tab-home",

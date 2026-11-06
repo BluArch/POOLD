@@ -14,17 +14,24 @@ test("no-shows: organizer who never shops is cancelled and buyers are refunded",
     const id = await h.create();
     await h.publish(id);
     const v = (await call(`/orders/${id}`, "GET", undefined, t.maya)).body;
+    await h.claim(id, t.maya);
+    await h.claim(id, t.jordan);
+    // Shares closed and the buyer was charged when shopping started...
+    const status = (s: string) =>
+      call(`/orders/${id}/status`, "POST", { status: s }, t.maya);
+    await status("locked");
     await call(
-      `/orders/${id}/claims`,
-      "PUT",
-      {
-        revision: v.order.revision,
-        attending: true,
-        claims: [{ itemId: v.items[0].id, quantity: 1 }],
-      },
-      t.jordan,
+      `/orders/${id}/items/${v.items[0].id}`,
+      "PATCH",
+      { shortfallDecision: "proceed" },
+      t.maya,
     );
-    await call(`/orders/${id}/pay/demo`, "POST", {}, t.jordan);
+    await status("shopping");
+    assert.ok(
+      (await call(`/orders/${id}`, "GET", undefined, t.jordan)).body.mine
+        .paidCents > 0,
+    );
+    // ...but the organizer never opened pickup.
     // Nothing happens until the 24-hour hold after pickup has passed.
     await runJobs(h.db, later(v.order.pickupEnd, 23));
     assert.notEqual(
@@ -52,17 +59,8 @@ test("no-shows: a buyer who misses pickup forfeits after the hold", async () => 
     await h.publish(id);
     let v = (await call(`/orders/${id}`, "GET", undefined, t.maya)).body;
     const iid = v.items[0].id;
-    await call(
-      `/orders/${id}/claims`,
-      "PUT",
-      {
-        revision: v.order.revision,
-        attending: true,
-        claims: [{ itemId: iid, quantity: 2 }],
-      },
-      t.jordan,
-    );
-    await call(`/orders/${id}/pay/demo`, "POST", {}, t.jordan);
+    await h.claim(id, t.maya);
+    await h.claim(id, t.jordan, 2);
     const status = (s: string) =>
       call(`/orders/${id}/status`, "POST", { status: s }, t.maya);
     await status("locked");

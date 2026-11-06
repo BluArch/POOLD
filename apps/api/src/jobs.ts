@@ -1,8 +1,13 @@
 import type { Pool } from "mysql2/promise";
 import { transaction, rows, first, execute } from "./db.js";
 import { notifyMembers } from "./notifications.js";
-import { settleAll, dropUnpaid, releaseRemaining } from "./payments.js";
-import { markNoShow, GRACE_MS } from "./fulfillment.js";
+import {
+  settleAll,
+  placeHolds,
+  dropFailedHolds,
+  releaseRemaining,
+} from "./payments.js";
+import { markNoShow, GRACE_MS, closeProblem } from "./fulfillment.js";
 export async function runJobs(db: Pool, now = new Date()) {
   const candidates = await rows(
     db,
@@ -67,14 +72,31 @@ export async function runJobs(db: Pool, now = new Date()) {
         events++;
         return;
       }
+      if (o.status === "locked") await dropFailedHolds(c, o, now);
       if (o.status === "open" && deadline <= time) {
-        await dropUnpaid(c, o);
+        // Deadline: close and hold everyone's cards, unless there's nothing
+        // to split (no other buyers, or the organizer isn't buying).
+        const problem = await closeProblem(c, o);
+        if (problem) {
+          await execute(c, "UPDATE orders SET status='cancelled' WHERE id=?", [
+            o.id,
+          ]);
+          await settleAll(c, o, "the group was cancelled", true);
+          await once(
+            `deadline-cancel:${o.id}`,
+            problem.code === "NO_BUYERS"
+              ? `${o.name} was cancelled: nobody else joined before the deadline. Nothing was charged.`
+              : `${o.name} was cancelled: the organizer didn’t add their own shares. Nothing was charged.`,
+          );
+          return;
+        }
         await execute(c, "UPDATE orders SET status='locked' WHERE id=?", [
           o.id,
         ]);
+        await placeHolds(c, o);
         await once(
           `deadline-close:${o.id}`,
-          `${o.name}: the deadline passed. Shares are now locked.`,
+          `${o.name}: the deadline passed. Shares are closed and your card has a hold for your shares.`,
         );
       } else if (o.status === "open" && deadline - time <= 24 * 3600000)
         await once(

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, Linking, Platform, Pressable, Image } from "react-native";
+import { View, Text, Linking, Pressable, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import {
@@ -9,6 +9,7 @@ import {
   money,
   describeShare,
   feeFor,
+  type SavedCard,
 } from "@poold/contracts";
 import { api, post } from "../api";
 import {
@@ -404,16 +405,22 @@ function ShareChooser({
   const [qty, setQty] = useState<Record<string, number>>(initial);
   const [category, setCategory] = useState("All");
   const [attending, setAttending] = useState(v.mine?.attending ?? false);
-  useEffect(() => setQty(initial), [initial]);
+  // Reset only when your saved shares actually change (not on every refresh),
+  // so picks survive a trip to the card screen and back.
+  const savedKey = v.items.map((i) => `${i.id}:${i.mine}`).join(",");
+  useEffect(() => setQty(initial), [savedKey]);
 
   const categories = ["All", ...new Set(v.items.map((i) => i.category))];
   const selected = v.items.filter((i) => (qty[i.id] ?? 0) > 0);
   const total = selected.reduce((n, i) => n + estimateFor(i, qty[i.id]), 0);
   const changed = v.items.some((i) => (qty[i.id] ?? 0) !== i.mine);
   const releasing = selected.length === 0;
-  const paid = v.mine?.paidCents ?? 0;
   const fee = feeFor(total, v.isOrganizer);
-  const toPay = Math.max(0, total + fee - paid);
+  // Buyers need a saved card to confirm. Nothing is charged until shares
+  // close (hold) and shopping starts (charge).
+  const card = useResource<SavedCard | null>("/payment-method");
+  const needsCard =
+    !v.isOrganizer && !releasing && card.data === null && !card.loading;
   const suffix = invite ? `?invite=${encodeURIComponent(invite)}` : "";
 
   const save = () =>
@@ -430,13 +437,9 @@ function ShareChooser({
         }),
       });
       await onSaved();
-      // Pay right away so the organizer has the money before shopping.
-      if (toPay > 0)
-        router.push({
-          pathname: "/(tabs)/pay/[id]",
-          params: { id: v.order.id },
-        });
     });
+  const addCard = () =>
+    router.push({ pathname: "/(tabs)/pay/[id]", params: { id: v.order.id } });
 
   return (
     <>
@@ -470,28 +473,34 @@ function ShareChooser({
           fee={fee}
           organizer={v.order.organizerName}
           action={
-            <Button
-              disabled={
-                a.busy ||
-                !changed ||
-                (!releasing && !attending) ||
-                (releasing && v.myClaims.length === 0)
-              }
-              danger={releasing && v.myClaims.length > 0}
-              onPress={() => void save()}
-            >
-              {a.busy
-                ? "Saving…"
-                : releasing
-                  ? v.myClaims.length
-                    ? "Release all my shares"
-                    : "Choose at least one share"
-                  : toPay > 0
-                    ? `Confirm & pay ${money(toPay)}`
+            needsCard ? (
+              <Button icon="card-outline" onPress={addCard}>
+                Add a card to join
+              </Button>
+            ) : (
+              <Button
+                disabled={
+                  a.busy ||
+                  !changed ||
+                  (!releasing && !attending) ||
+                  (releasing && v.myClaims.length === 0)
+                }
+                danger={releasing && v.myClaims.length > 0}
+                onPress={() => void save()}
+              >
+                {a.busy
+                  ? "Saving…"
+                  : releasing
+                    ? v.myClaims.length
+                      ? "Release all my shares"
+                      : "Choose at least one share"
                     : v.myClaims.length
                       ? "Save changes"
-                      : "Confirm shares"}
-            </Button>
+                      : v.isOrganizer
+                        ? "Add my share"
+                        : "Join group"}
+              </Button>
+            )
           }
         >
           {!releasing && (
@@ -502,6 +511,15 @@ function ShareChooser({
                 onChange={setAttending}
               />
             </View>
+          )}
+          {!releasing && (
+            <Text style={[type.mono, { fontSize: 12 }]}>
+              {v.isOrganizer
+                ? "You pay for your share at the store. Nothing is charged in the app."
+                : card.data
+                  ? `Nothing is charged now. ${card.data.brand} •••• ${card.data.last4} gets a hold when shares close ${when(v.order.deadline)} and is charged when shopping starts.`
+                  : "Nothing is charged now. Your card gets a hold when shares close and is charged when shopping starts."}
+            </Text>
           )}
           {!!a.error && (
             <View style={styles.note}>
@@ -642,93 +660,132 @@ export function PickupDetails({
 }
 
 /**
- * Payment status for your shares. Buyers pay when they confirm shares, so the
- * organizer has the money before shopping. Always test mode.
+ * Where your money stands: card saved (no charge) → hold when shares close →
+ * charged when shopping starts → refunds or small extra charges after.
  */
 function PayShare({ view: v }: { view: OrderView }) {
-  const a = useAction();
   const m = v.mine,
     o = v.order;
   if (!m) return null;
-  const refunds = m.payments.filter((p) => p.kind === "refund");
-  const lastCard = m.payments.find((p) => p.kind === "payment" && p.cardLast4);
-  // Stripe test key on the server → Stripe's hosted test checkout.
-  // Otherwise → POOLD's own test checkout.
-  const start = () =>
-    a.run(async () => {
-      if (v.payments !== "stripe_test") {
-        router.push({ pathname: "/(tabs)/pay/[id]", params: { id: o.id } });
-        return;
-      }
-      const r = await post<{ url?: string }>(`/orders/${o.id}/pay`);
-      if (!r.url)
-        throw new Error("Stripe test checkout didn’t open. Try again.");
-      if (Platform.OS === "web") window.location.assign(r.url);
-      else await Linking.openURL(r.url);
-    });
-  if (m.dueCents > 0 && !["cancelled"].includes(o.status))
+  const changeCard = () =>
+    router.push({ pathname: "/(tabs)/pay/[id]", params: { id: o.id } });
+  if (v.isOrganizer)
     return (
-      <View
-        style={[
-          styles.card,
-          { gap: 10, borderWidth: 2, borderColor: brand.orange },
-        ]}
-      >
-        <View style={styles.between}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.h2}>
-              {m.paidCents > 0 ? "Balance to pay" : "Payment needed"}
-            </Text>
-            <Text style={type.mono}>
-              {m.paidCents > 0
-                ? "A price went up or you added shares."
-                : `Pay now so ${o.organizerName.split(" ")[0]} can shop for you.`}
-            </Text>
-          </View>
-          <Text style={type.total}>{money(m.dueCents)}</Text>
-        </View>
-        <Button
-          icon="card-outline"
-          disabled={a.busy}
-          onPress={() => void start()}
-        >
-          {`Pay ${money(m.dueCents)}`}
-        </Button>
-        <Text style={[type.mono, { textAlign: "center" }]}>
-          Test mode: no real money is charged.
+      <View style={[styles.note, styles.row, { alignItems: "flex-start" }]}>
+        <Ionicons name="storefront-outline" size={22} color={P.ink} />
+        <Text style={[styles.text, { flex: 1 }]}>
+          You pay for your own share at the store, so there’s nothing to pay in
+          the app and no service fee.
         </Text>
-        <ErrorText message={a.error} />
       </View>
     );
-  if (m.paidCents <= 0 && !refunds.length) return null;
-  return (
-    <View style={[styles.card, { gap: 8 }]}>
-      <View style={styles.row}>
-        <Ionicons name="checkmark-circle" size={24} color={brand.greenDark} />
-        <View style={{ flex: 1 }}>
-          <Text style={styles.label}>
-            {m.paidCents > 0 ? `Paid ${money(m.paidCents)}` : "Fully refunded"}
-          </Text>
-          <Text style={type.mono}>
-            {lastCard
-              ? `${lastCard.cardBrand ?? "Card"} •••• ${lastCard.cardLast4}`
-              : "Card"}{" "}
-            · test payment
+  const h = m.hold;
+  const card = h?.cardLast4
+    ? `${h.cardBrand ?? "Card"} •••• ${h.cardLast4}`
+    : "your card";
+  const total = v.myEstimateCents + v.myFeeCents;
+  if (h?.status === "failed")
+    return (
+      <View
+        style={[styles.card, { gap: 10, borderWidth: 2, borderColor: P.beet }]}
+      >
+        <View style={styles.row}>
+          <Ionicons name="alert-circle" size={24} color={P.beet} />
+          <Text style={[styles.h2, { flex: 1 }]}>
+            {h.reason ?? "Card declined"}
           </Text>
         </View>
-        <Badge tone="good">Paid</Badge>
+        <Text style={styles.text}>
+          We couldn’t hold {money(h.amountCents)} on {card}. Update your card
+          {h.retryUntil ? ` by ${when(h.retryUntil)}` : ""} or your shares will
+          be released. Shopping can’t start until this is fixed.
+        </Text>
+        <Button icon="card-outline" onPress={changeCard}>
+          Update card
+        </Button>
       </View>
-      {refunds.map((r) => (
-        <View key={r.id} style={styles.between}>
-          <Text style={[type.mono, { flex: 1 }]}>
-            Refunded {when(r.createdAt)}
-            {r.note ? ` · ${r.note}` : ""}
-          </Text>
-          <Text style={[type.label, { color: brand.greenDeep }]}>
-            +{money(r.amountCents)}
-          </Text>
+    );
+  if (h?.status === "authorized")
+    return (
+      <View style={[styles.card, { gap: 6 }]}>
+        <View style={styles.between}>
+          <View style={[styles.row, { flex: 1 }]}>
+            <Ionicons name="lock-closed" size={20} color={brand.greenDeep} />
+            <Text style={styles.label}>
+              {money(h.amountCents)} held on {card}
+            </Text>
+          </View>
+          <Badge tone="good">Authorized</Badge>
         </View>
-      ))}
+        <Text style={type.mono}>
+          Charged when {o.organizerName.split(" ")[0]} starts shopping. Nothing
+          has been charged yet.
+        </Text>
+      </View>
+    );
+  if (h?.status === "captured" || m.paidCents > 0 || m.payments.length) {
+    const refunds = m.payments.filter((p) => p.kind === "refund");
+    const charges = m.payments.filter((p) => p.kind === "payment");
+    return (
+      <View style={[styles.card, { gap: 8 }]}>
+        <View style={styles.row}>
+          <Ionicons name="checkmark-circle" size={24} color={brand.greenDark} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.label}>
+              {m.paidCents > 0
+                ? `Paid ${money(m.paidCents)}`
+                : "Fully refunded"}
+            </Text>
+            <Text style={type.mono}>{card} · test payment</Text>
+          </View>
+          <Badge tone="good">Paid</Badge>
+        </View>
+        {[...charges.slice(0, -1), ...refunds].map((p) => (
+          <View key={p.id} style={styles.between}>
+            <Text style={[type.mono, { flex: 1 }]}>
+              {p.kind === "refund" ? "Refunded" : "Extra charge"}{" "}
+              {when(p.createdAt)}
+              {p.note ? ` · ${p.note}` : ""}
+            </Text>
+            <Text
+              style={[
+                type.label,
+                { color: p.kind === "refund" ? brand.greenDeep : P.ink },
+              ]}
+            >
+              {p.kind === "refund" ? "+" : ""}
+              {money(p.amountCents)}
+            </Text>
+          </View>
+        ))}
+        {m.dueCents > 0 && (
+          <>
+            <Text style={[styles.text, { color: P.beet }]}>
+              A price went up by {money(m.dueCents)} and your card was declined.
+            </Text>
+            <Button icon="card-outline" onPress={changeCard}>
+              {`Update card to pay ${money(m.dueCents)}`}
+            </Button>
+          </>
+        )}
+      </View>
+    );
+  }
+  // Group still open: card saved, nothing held or charged yet.
+  return (
+    <View style={[styles.card, { gap: 6 }]}>
+      <View style={styles.between}>
+        <Text style={styles.label}>About {money(total)} for your shares</Text>
+        <Pressable accessibilityRole="button" onPress={changeCard} hitSlop={8}>
+          <Text style={[type.label, { color: P.carrot, fontSize: 13 }]}>
+            Change card
+          </Text>
+        </Pressable>
+      </View>
+      <Text style={type.mono}>
+        Includes the 5% service fee. Nothing is charged now: a hold is placed
+        when shares close ({when(o.deadline)}) and charged when shopping starts.
+      </Text>
     </View>
   );
 }

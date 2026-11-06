@@ -12,7 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { type OrderView, money } from "@poold/contracts";
-import { post } from "../../../api";
+import { api } from "../../../api";
 import {
   ErrorText,
   Loading,
@@ -38,20 +38,20 @@ type Step = "form" | "processing" | "auth" | "done";
 type Outcome = "ok" | "declined" | "funds" | "auth";
 
 const TEST_CARDS: { number: string; label: string; outcome: Outcome }[] = [
-  { number: "4242 4242 4242 4242", label: "Payment succeeds", outcome: "ok" },
+  { number: "4242 4242 4242 4242", label: "Works every time", outcome: "ok" },
   {
     number: "4000 0025 0000 3155",
-    label: "Asks the bank to confirm it’s you",
+    label: "Bank asks you to confirm it’s you",
     outcome: "auth",
   },
   {
     number: "4000 0000 0000 0002",
-    label: "Card is declined",
+    label: "Saves, then is declined when shares close",
     outcome: "declined",
   },
   {
     number: "4000 0000 0000 9995",
-    label: "Insufficient funds",
+    label: "Saves, then has insufficient funds at close",
     outcome: "funds",
   },
   {
@@ -108,10 +108,16 @@ export default function Pay() {
       brand: string;
       last4: string;
     } | null>(null);
-  // Amount is fixed when the page opens, so it can't change mid-payment.
+  // What will be held later: your shares + fee (estimate), or what's due now
+  // if a hold was declined or a price went up.
   const [amount, setAmount] = useState<number | null>(null);
   useEffect(() => {
-    if (v && amount === null) setAmount(v.mine?.dueCents ?? 0);
+    if (v && amount === null)
+      setAmount(
+        v.mine?.hold?.status === "failed"
+          ? v.mine.hold.amountCents
+          : v.mine?.dueCents || v.myEstimateCents + v.myFeeCents,
+      );
   }, [v]);
 
   if (!v || amount === null)
@@ -124,17 +130,30 @@ export default function Pay() {
 
   const number = digits(card);
   const cardBrand = brandOf(number);
+  // Go back to the group page as it was, so chosen shares aren't lost.
   const back = () =>
-    router.replace({ pathname: "/(tabs)/order/[id]", params: { id } });
+    router.canGoBack()
+      ? router.back()
+      : router.replace({ pathname: "/(tabs)/order/[id]", params: { id } });
+  const fixing =
+    v.mine?.hold?.status === "failed" ||
+    (v.mine?.hold?.status === "captured" && (v.mine?.dueCents ?? 0) > 0);
 
-  const finish = async () => {
+  // Save the card. Only the brand, last four digits and what the test card
+  // simulates go to the server. Nothing is charged.
+  const finish = async (outcome: "ok" | "declined" | "funds" = "ok") => {
     try {
-      const result = await post<{ ref: string }>(`/orders/${id}/pay/demo`, {
-        brand: cardBrand,
-        last4: number.slice(-4),
+      await api("/payment-method", {
+        method: "PUT",
+        body: JSON.stringify({
+          brand: cardBrand,
+          last4: number.slice(-4),
+          outcome,
+        }),
       });
+      const after = await api<OrderView>(`/orders/${id}`);
       setReceipt({
-        ref: result.ref,
+        ref: after.mine?.hold?.status ?? "",
         at: new Date().toISOString(),
         cents: amount,
         brand: cardBrand ?? "Card",
@@ -176,19 +195,13 @@ export default function Pay() {
     await new Promise((done) => setTimeout(done, 1400));
     const outcome = outcomeOf(number)!;
     if (outcome === "auth") return setStep("auth");
-    if (outcome === "declined") {
-      setStep("form");
-      return setErrors({ card: "Your card was declined." });
-    }
-    if (outcome === "funds") {
-      setStep("form");
-      return setErrors({ card: "Your card has insufficient funds." });
-    }
-    await finish();
+    // Like a real card, these save fine now and fail later, when the hold
+    // is placed at close.
+    await finish(outcome);
   };
 
   if (step === "done" && receipt)
-    return <Success receipt={receipt} view={v} email={email} onDone={back} />;
+    return <Success receipt={receipt} view={v} onDone={back} />;
 
   const busy = step === "processing" || step === "auth";
   return (
@@ -243,308 +256,309 @@ export default function Pay() {
           </View>
         </View>
 
-        {amount <= 0 ? (
-          <PaidUp view={v} onDone={back} />
-        ) : (
-          <>
-            {/* Summary */}
-            <View style={{ gap: 4 }}>
-              <Text style={[type.body, { color: P.muted }]}>
-                Pay {v.order.organizerName} via POOLD
-              </Text>
-              <Text
-                style={{
-                  fontFamily: fonts.title,
-                  fontSize: 36,
-                  letterSpacing: -0.5,
-                  color: NAVY,
-                }}
-              >
-                CA{money(amount)}
-              </Text>
-              <Text style={type.mono}>Your shares in {v.order.name}</Text>
-              <Pressable
-                onPress={() => setDetails(!details)}
-                style={[styles.row, { gap: 4, minHeight: 32 }]}
-              >
-                <Text style={[type.label, { fontSize: 13 }]}>
-                  {details ? "Hide details" : "View details"}
-                </Text>
-                <Ionicons
-                  name={details ? "chevron-up" : "chevron-down"}
-                  size={14}
-                  color={P.ink}
-                />
-              </Pressable>
-              {details && (
-                <View style={{ gap: 12, paddingTop: 6 }}>
-                  {v.myClaims
-                    .filter((c) => c.available)
-                    .map((c) => (
-                      <View key={c.itemId} style={[styles.row, { gap: 12 }]}>
-                        <ItemIcon
-                          item={{
-                            name: c.name,
-                            category: v.items.find((i) => i.id === c.itemId)
-                              ?.category,
-                          }}
-                          size={36}
-                        />
-                        <View style={{ flex: 1 }}>
-                          <Text style={type.label}>{c.name}</Text>
-                          <Text style={type.mono}>Qty {c.quantity}</Text>
-                        </View>
-                        <Text style={type.label}>{money(c.estimateCents)}</Text>
-                      </View>
-                    ))}
-                  <Divider />
-                  <Row label="Your shares" value={money(v.myEstimateCents)} />
-                  <Row
-                    label={
-                      v.isOrganizer
-                        ? "Service fee (none for organizers)"
-                        : "Service fee (5%, held until hand-out)"
-                    }
-                    value={money(v.myFeeCents)}
-                  />
-                  {(v.mine?.paidCents ?? 0) > 0 && (
-                    <Row
-                      label="Already paid"
-                      value={`−${money(v.mine!.paidCents)}`}
-                    />
-                  )}
-                  <Divider />
-                  <Row label="Total due" value={money(amount)} bold />
-                </View>
-              )}
-            </View>
-
-            {/* Contact */}
-            <View style={{ gap: 8 }}>
-              <Text style={[type.label, { color: NAVY, fontSize: 16 }]}>
-                Contact information
-              </Text>
-              <Group>
-                <Input
-                  label="Email"
-                  value={email}
-                  onChangeText={setEmail}
-                  placeholder="email@example.com"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-              </Group>
-              <FieldError text={errors.email} />
-            </View>
-
-            {/* Card */}
-            <View style={{ gap: 8 }}>
-              <Text style={[type.label, { color: NAVY, fontSize: 16 }]}>
-                Payment method
-              </Text>
-              <View
-                style={[
-                  styles.row,
-                  {
-                    borderWidth: 1.5,
-                    borderColor: NAVY,
-                    borderRadius: 8,
-                    padding: 12,
-                    gap: 10,
-                  },
-                ]}
-              >
-                <Ionicons name="card" size={18} color={NAVY} />
-                <Text style={[type.label, { flex: 1, color: NAVY }]}>Card</Text>
-                <Ionicons name="radio-button-on" size={18} color={NAVY} />
-              </View>
-              <Text style={[styles.label, { marginTop: 6 }]}>
-                Card information
-              </Text>
-              <Group invalid={!!(errors.card || errors.expiry || errors.cvc)}>
-                <View style={[styles.row, { paddingRight: 10, gap: 4 }]}>
-                  <Input
-                    label="Card number"
-                    card
-                    value={card}
-                    onChangeText={(t) => setCard(formatCard(t))}
-                    placeholder="1234 1234 1234 1234"
-                  />
-                  {(["Visa", "Mastercard", "Amex"] as const)
-                    .filter((b) => !cardBrand || b === cardBrand)
-                    .map((b) => (
-                      <BrandMark key={b} brand={b} />
-                    ))}
-                </View>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    borderTopWidth: 1,
-                    borderColor: FIELD_BORDER,
-                  }}
-                >
-                  <Input
-                    label="Expiration date"
-                    card
-                    value={expiry}
-                    onChangeText={(t) => setExpiry(formatExpiry(t))}
-                    placeholder="MM / YY"
-                  />
-                  <View style={{ width: 1, backgroundColor: FIELD_BORDER }} />
-                  <View style={[styles.row, { flex: 1, paddingRight: 10 }]}>
-                    <Input
-                      label="CVC"
-                      card
-                      value={cvc}
-                      onChangeText={(t) => setCvc(digits(t).slice(0, 4))}
-                      placeholder="CVC"
-                    />
-                    <Ionicons name="card-outline" size={18} color={P.muted} />
-                  </View>
-                </View>
-              </Group>
-              <FieldError text={errors.card || errors.expiry || errors.cvc} />
-              <Text style={[styles.label, { marginTop: 6 }]}>
-                Cardholder name
-              </Text>
-              <Group invalid={!!errors.name}>
-                <Input
-                  label="Cardholder name"
-                  value={name}
-                  onChangeText={setName}
-                  placeholder="Full name on card"
-                />
-              </Group>
-              <FieldError text={errors.name} />
-              <Text style={[styles.label, { marginTop: 6 }]}>
-                Country or region
-              </Text>
-              <Group invalid={!!errors.postal}>
-                <View style={[styles.row, { padding: 13, minHeight: 46 }]}>
-                  <Text style={[type.body, { flex: 1 }]}>Canada</Text>
-                  <Ionicons name="chevron-down" size={16} color={P.muted} />
-                </View>
-                <View style={{ borderTopWidth: 1, borderColor: FIELD_BORDER }}>
-                  <Input
-                    label="Postal code"
-                    value={postal}
-                    onChangeText={(t) => setPostal(t.toUpperCase().slice(0, 7))}
-                    placeholder="Postal code"
-                    autoCapitalize="characters"
-                  />
-                </View>
-              </Group>
-              <FieldError text={errors.postal} />
-            </View>
-
-            <ErrorText message={error} />
-            <Pressable
-              accessibilityRole="button"
-              disabled={busy}
-              onPress={() => void pay()}
-              style={({ pressed }) => ({
-                minHeight: 50,
-                borderRadius: 8,
-                backgroundColor: NAVY,
-                alignItems: "center",
-                justifyContent: "center",
-                flexDirection: "row",
-                gap: 8,
-                opacity: pressed ? 0.85 : 1,
-                ...shadow,
-              })}
-            >
-              {busy ? (
-                <ActivityIndicator color={P.white} />
-              ) : (
-                <>
-                  <Text
-                    style={{
-                      fontFamily: fonts.bold,
-                      fontSize: 16,
-                      color: P.white,
-                    }}
-                  >
-                    Pay CA{money(amount)}
-                  </Text>
-                  <Ionicons name="lock-closed" size={14} color="#C9CCE0" />
-                </>
-              )}
-            </Pressable>
-
-            {/* Test cards */}
-            <View
+        <>
+          {/* Summary */}
+          <View style={{ gap: 4 }}>
+            <Text style={[type.body, { color: P.muted }]}>
+              {fixing ? "Update your card" : "Save a card for"} · {v.order.name}
+            </Text>
+            <Text
               style={{
-                backgroundColor: "#FFF4EC",
-                borderRadius: 10,
-                padding: 14,
-                gap: 8,
+                fontFamily: fonts.title,
+                fontSize: 36,
+                letterSpacing: -0.5,
+                color: NAVY,
               }}
             >
-              <Pressable
-                onPress={() => setCards(!cards)}
-                style={[styles.row, { minHeight: 28 }]}
-              >
-                <Ionicons name="flask-outline" size={18} color="#A0390E" />
-                <Text style={[type.label, { flex: 1, color: "#A0390E" }]}>
-                  Test cards (tap one to fill it in)
-                </Text>
-                <Ionicons
-                  name={cards ? "chevron-up" : "chevron-down"}
-                  size={16}
-                  color="#A0390E"
-                />
-              </Pressable>
-              {cards &&
-                TEST_CARDS.map((c) => (
-                  <Pressable
-                    key={c.number}
-                    accessibilityRole="button"
-                    onPress={() => {
-                      setCard(c.number);
-                      setExpiry("12 / 30");
-                      setCvc("123");
-                      if (!postal) setPostal("V8P 5C2");
-                      setErrors({});
-                    }}
-                    style={({ pressed }) => [
-                      styles.row,
-                      {
-                        backgroundColor: pressed ? "#FFE6D4" : P.white,
-                        borderRadius: 8,
-                        padding: 10,
-                      },
-                    ]}
-                  >
-                    <BrandMark brand={brandOf(digits(c.number)) ?? "Visa"} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[type.label, { fontSize: 13 }]}>
-                        {c.number}
-                      </Text>
-                      <Text style={[type.mono, { fontSize: 12 }]}>
-                        {c.label}
-                      </Text>
+              CA$0.00 today
+            </Text>
+            <Text style={type.mono}>
+              {fixing
+                ? `We’ll try the ${money(amount)} again as soon as you save.`
+                : amount > 0
+                  ? `About ${money(amount)} is held when shares close (${when(v.order.deadline)}) and charged when ${v.order.organizerName.split(" ")[0]} starts shopping.`
+                  : `Your shares + 5% fee are held when shares close (${when(v.order.deadline)}) and charged when ${v.order.organizerName.split(" ")[0]} starts shopping.`}
+            </Text>
+            <Pressable
+              onPress={() => setDetails(!details)}
+              style={[styles.row, { gap: 4, minHeight: 32 }]}
+            >
+              <Text style={[type.label, { fontSize: 13 }]}>
+                {details ? "Hide details" : "View details"}
+              </Text>
+              <Ionicons
+                name={details ? "chevron-up" : "chevron-down"}
+                size={14}
+                color={P.ink}
+              />
+            </Pressable>
+            {details && v.myClaims.length > 0 && (
+              <View style={{ gap: 12, paddingTop: 6 }}>
+                {v.myClaims
+                  .filter((c) => c.available)
+                  .map((c) => (
+                    <View key={c.itemId} style={[styles.row, { gap: 12 }]}>
+                      <ItemIcon
+                        item={{
+                          name: c.name,
+                          category: v.items.find((i) => i.id === c.itemId)
+                            ?.category,
+                        }}
+                        size={36}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={type.label}>{c.name}</Text>
+                        <Text style={type.mono}>Qty {c.quantity}</Text>
+                      </View>
+                      <Text style={type.label}>{money(c.estimateCents)}</Text>
                     </View>
-                  </Pressable>
-                ))}
-              <Text style={[type.mono, { fontSize: 12 }]}>
-                Any future date, any CVC and any postal code work.
-              </Text>
-            </View>
-
-            <View style={{ alignItems: "center", gap: 4 }}>
-              <View style={[styles.row, { gap: 6 }]}>
-                <Ionicons name="lock-closed" size={12} color={P.muted} />
-                <Text style={[type.mono, { fontSize: 12 }]}>
-                  Secure test checkout. No real money moves.
-                </Text>
+                  ))}
+                <Divider />
+                <Row label="Your shares" value={money(v.myEstimateCents)} />
+                <Row
+                  label={
+                    v.isOrganizer
+                      ? "Service fee (none for organizers)"
+                      : "Service fee (5%, held until hand-out)"
+                  }
+                  value={money(v.myFeeCents)}
+                />
+                {(v.mine?.paidCents ?? 0) > 0 && (
+                  <Row
+                    label="Already paid"
+                    value={`−${money(v.mine!.paidCents)}`}
+                  />
+                )}
+                <Divider />
+                <Row label="Charged today" value={money(0)} bold />
+                <Row label="Held at close (about)" value={money(amount)} />
               </View>
+            )}
+          </View>
+
+          {/* Contact */}
+          <View style={{ gap: 8 }}>
+            <Text style={[type.label, { color: NAVY, fontSize: 16 }]}>
+              Contact information
+            </Text>
+            <Group>
+              <Input
+                label="Email"
+                value={email}
+                onChangeText={setEmail}
+                placeholder="email@example.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </Group>
+            <FieldError text={errors.email} />
+          </View>
+
+          {/* Card */}
+          <View style={{ gap: 8 }}>
+            <Text style={[type.label, { color: NAVY, fontSize: 16 }]}>
+              Payment method
+            </Text>
+            <View
+              style={[
+                styles.row,
+                {
+                  borderWidth: 1.5,
+                  borderColor: NAVY,
+                  borderRadius: 8,
+                  padding: 12,
+                  gap: 10,
+                },
+              ]}
+            >
+              <Ionicons name="card" size={18} color={NAVY} />
+              <Text style={[type.label, { flex: 1, color: NAVY }]}>Card</Text>
+              <Ionicons name="radio-button-on" size={18} color={NAVY} />
+            </View>
+            <Text style={[styles.label, { marginTop: 6 }]}>
+              Card information
+            </Text>
+            <Group invalid={!!(errors.card || errors.expiry || errors.cvc)}>
+              <View style={[styles.row, { paddingRight: 10, gap: 4 }]}>
+                <Input
+                  label="Card number"
+                  card
+                  value={card}
+                  onChangeText={(t) => setCard(formatCard(t))}
+                  placeholder="1234 1234 1234 1234"
+                />
+                {(["Visa", "Mastercard", "Amex"] as const)
+                  .filter((b) => !cardBrand || b === cardBrand)
+                  .map((b) => (
+                    <BrandMark key={b} brand={b} />
+                  ))}
+              </View>
+              <View
+                style={{
+                  flexDirection: "row",
+                  borderTopWidth: 1,
+                  borderColor: FIELD_BORDER,
+                }}
+              >
+                <Input
+                  label="Expiration date"
+                  card
+                  value={expiry}
+                  onChangeText={(t) => setExpiry(formatExpiry(t))}
+                  placeholder="MM / YY"
+                />
+                <View style={{ width: 1, backgroundColor: FIELD_BORDER }} />
+                <View style={[styles.row, { flex: 1, paddingRight: 10 }]}>
+                  <Input
+                    label="CVC"
+                    card
+                    value={cvc}
+                    onChangeText={(t) => setCvc(digits(t).slice(0, 4))}
+                    placeholder="CVC"
+                  />
+                  <Ionicons name="card-outline" size={18} color={P.muted} />
+                </View>
+              </View>
+            </Group>
+            <FieldError text={errors.card || errors.expiry || errors.cvc} />
+            <Text style={[styles.label, { marginTop: 6 }]}>
+              Cardholder name
+            </Text>
+            <Group invalid={!!errors.name}>
+              <Input
+                label="Cardholder name"
+                value={name}
+                onChangeText={setName}
+                placeholder="Full name on card"
+              />
+            </Group>
+            <FieldError text={errors.name} />
+            <Text style={[styles.label, { marginTop: 6 }]}>
+              Country or region
+            </Text>
+            <Group invalid={!!errors.postal}>
+              <View style={[styles.row, { padding: 13, minHeight: 46 }]}>
+                <Text style={[type.body, { flex: 1 }]}>Canada</Text>
+                <Ionicons name="chevron-down" size={16} color={P.muted} />
+              </View>
+              <View style={{ borderTopWidth: 1, borderColor: FIELD_BORDER }}>
+                <Input
+                  label="Postal code"
+                  value={postal}
+                  onChangeText={(t) => setPostal(t.toUpperCase().slice(0, 7))}
+                  placeholder="Postal code"
+                  autoCapitalize="characters"
+                />
+              </View>
+            </Group>
+            <FieldError text={errors.postal} />
+          </View>
+
+          <ErrorText message={error} />
+          <Pressable
+            accessibilityRole="button"
+            disabled={busy}
+            onPress={() => void pay()}
+            style={({ pressed }) => ({
+              minHeight: 50,
+              borderRadius: 8,
+              backgroundColor: NAVY,
+              alignItems: "center",
+              justifyContent: "center",
+              flexDirection: "row",
+              gap: 8,
+              opacity: pressed ? 0.85 : 1,
+              ...shadow,
+            })}
+          >
+            {busy ? (
+              <ActivityIndicator color={P.white} />
+            ) : (
+              <>
+                <Text
+                  style={{
+                    fontFamily: fonts.bold,
+                    fontSize: 16,
+                    color: P.white,
+                  }}
+                >
+                  {fixing ? "Save card and try again" : "Save card"}
+                </Text>
+                <Ionicons name="lock-closed" size={14} color="#C9CCE0" />
+              </>
+            )}
+          </Pressable>
+
+          {/* Test cards */}
+          <View
+            style={{
+              backgroundColor: "#FFF4EC",
+              borderRadius: 10,
+              padding: 14,
+              gap: 8,
+            }}
+          >
+            <Pressable
+              onPress={() => setCards(!cards)}
+              style={[styles.row, { minHeight: 28 }]}
+            >
+              <Ionicons name="flask-outline" size={18} color="#A0390E" />
+              <Text style={[type.label, { flex: 1, color: "#A0390E" }]}>
+                Test cards (tap one to fill it in)
+              </Text>
+              <Ionicons
+                name={cards ? "chevron-up" : "chevron-down"}
+                size={16}
+                color="#A0390E"
+              />
+            </Pressable>
+            {cards &&
+              TEST_CARDS.map((c) => (
+                <Pressable
+                  key={c.number}
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setCard(c.number);
+                    setExpiry("12 / 30");
+                    setCvc("123");
+                    if (!postal) setPostal("V8P 5C2");
+                    setErrors({});
+                  }}
+                  style={({ pressed }) => [
+                    styles.row,
+                    {
+                      backgroundColor: pressed ? "#FFE6D4" : P.white,
+                      borderRadius: 8,
+                      padding: 10,
+                    },
+                  ]}
+                >
+                  <BrandMark brand={brandOf(digits(c.number)) ?? "Visa"} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[type.label, { fontSize: 13 }]}>
+                      {c.number}
+                    </Text>
+                    <Text style={[type.mono, { fontSize: 12 }]}>{c.label}</Text>
+                  </View>
+                </Pressable>
+              ))}
+            <Text style={[type.mono, { fontSize: 12 }]}>
+              Any future date, any CVC and any postal code work.
+            </Text>
+          </View>
+
+          <View style={{ alignItems: "center", gap: 4 }}>
+            <View style={[styles.row, { gap: 6 }]}>
+              <Ionicons name="lock-closed" size={12} color={P.muted} />
               <Text style={[type.mono, { fontSize: 12 }]}>
-                Your card number never leaves this device.
+                Secure test checkout. Nothing is charged today.
               </Text>
             </View>
-          </>
-        )}
+            <Text style={[type.mono, { fontSize: 12 }]}>
+              Your card number never leaves this device.
+            </Text>
+          </View>
+        </>
       </ScrollView>
 
       {/* Bank authentication, as with the 3D Secure test card */}
@@ -580,8 +594,8 @@ export default function Pay() {
             </View>
             <View style={{ padding: 18, gap: 12 }}>
               <Text style={styles.text}>
-                Your bank wants to confirm this CA{money(amount)} payment to
-                POOLD. In a real payment you’d approve it in your banking app.
+                Your bank wants to confirm you’re saving this card for POOLD
+                payments. In real life you’d approve it in your banking app.
               </Text>
               <Text style={type.mono}>Card ending in {number.slice(-4)}</Text>
               <Pressable
@@ -632,7 +646,6 @@ export default function Pay() {
 function Success({
   receipt,
   view: v,
-  email,
   onDone,
 }: {
   receipt: {
@@ -643,7 +656,6 @@ function Success({
     last4: string;
   };
   view: OrderView;
-  email: string;
   onDone: () => void;
 }) {
   return (
@@ -672,13 +684,15 @@ function Success({
           <Ionicons name="checkmark" size={44} color={brand.greenDeep} />
         </View>
         <View style={{ alignItems: "center", gap: 4 }}>
-          <Text style={[type.title, { textAlign: "center" }]}>
-            Payment successful
-          </Text>
+          <Text style={[type.title, { textAlign: "center" }]}>Card saved</Text>
           <Text style={[styles.muted, { textAlign: "center" }]}>
-            {v.isOrganizer
-              ? "Your own share is paid in, so the receipt covers everything."
-              : `${v.order.organizerName.split(" ")[0]} has your money for the shopping trip.`}
+            {receipt.ref === "authorized"
+              ? "We tried your hold again and it went through."
+              : receipt.ref === "failed"
+                ? "We tried your hold again, but this card was declined too. Try another card."
+                : receipt.ref === "captured"
+                  ? "Any balance was charged to this card."
+                  : "Now tap Join group to confirm your shares."}
           </Text>
         </View>
         <View
@@ -691,24 +705,28 @@ function Success({
             gap: 12,
           }}
         >
-          <Row label="Amount paid" value={`CA${money(receipt.cents)}`} bold />
+          <Row label="Charged today" value="CA$0.00" bold />
           <Divider />
-          <Row label="Paid to" value={`${v.order.organizerName} via POOLD`} />
-          <Row label="For" value={v.order.name} />
-          <Row label="Date" value={when(receipt.at)} />
           <Row label="Card" value={`${receipt.brand} •••• ${receipt.last4}`} />
+          <Row label="For" value={v.order.name} />
           <Row
-            label="Receipt no."
-            value={receipt.ref
-              .replace(/^pi_test_/, "")
-              .slice(0, 12)
-              .toUpperCase()}
+            label="Hold placed"
+            value={`When shares close, ${when(v.order.deadline)}`}
+          />
+          <Row
+            label="Charged"
+            value={`When ${v.order.organizerName.split(" ")[0]} starts shopping`}
           />
         </View>
         <View style={[styles.row, { gap: 8, alignSelf: "stretch" }]}>
-          <Ionicons name="mail-outline" size={18} color={P.muted} />
+          <Ionicons
+            name="information-circle-outline"
+            size={18}
+            color={P.muted}
+          />
           <Text style={[type.mono, { flex: 1 }]}>
-            A receipt was sent to {email}. Test mode, so no real money moved.
+            Changing your shares before they close costs nothing. Test mode, so
+            no real money moves.
           </Text>
         </View>
         <Pressable
@@ -729,33 +747,6 @@ function Success({
         </Pressable>
       </ScrollView>
     </SafeAreaView>
-  );
-}
-
-function PaidUp({ view: v, onDone }: { view: OrderView; onDone: () => void }) {
-  return (
-    <View style={{ gap: 16 }}>
-      <Text style={type.title}>You’re all paid up</Text>
-      {v.mine?.payments.map((p) => (
-        <Row
-          key={p.id}
-          label={`${p.kind === "refund" ? "Refund" : "Payment"} · ${when(p.createdAt)}`}
-          value={`${p.kind === "refund" ? "+" : ""}${money(p.amountCents)}`}
-        />
-      ))}
-      <Pressable
-        onPress={onDone}
-        style={{
-          minHeight: 50,
-          borderRadius: 8,
-          backgroundColor: NAVY,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <Text style={[type.label, { color: P.white }]}>Back to the group</Text>
-      </Pressable>
-    </View>
   );
 }
 

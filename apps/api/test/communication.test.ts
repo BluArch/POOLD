@@ -140,6 +140,8 @@ test("Phase E: idempotent concurrent jobs close deadlines and issue pickup remin
   try {
     const id = await h.create();
     await h.publish(id);
+    await h.claim(id, t.maya);
+    await h.claim(id, t.jordan);
     const now = new Date();
     await execute(
       h.db,
@@ -163,13 +165,14 @@ test("Phase E: idempotent concurrent jobs close deadlines and issue pickup remin
       "SELECT * FROM notifications WHERE order_id=?",
       [id],
     );
+    // One notification per member (organizer + buyer), despite three runs.
     assert.equal(
       ns.filter((n) => n.event_key === `deadline-close:${id}`).length,
-      1,
+      2,
     );
     assert.equal(
       ns.filter((n) => n.event_key === `pickup-reminder:${id}`).length,
-      1,
+      2,
     );
     assert.equal(
       (

@@ -94,7 +94,6 @@ export function ReceiptPanel({
   quantity,
   total,
   fee = 0,
-  organizer,
   action,
   children,
 }: {
@@ -124,7 +123,7 @@ export function ReceiptPanel({
         <View style={{ flex: 1 }}>
           <Text style={type.mono}>
             {shares
-              ? `${shares} ${shares === 1 ? "share" : "shares"}${fee ? ` + ${money(fee)} fee (5%)` : ""} · paid to ${organizer.split(" ")[0]} up front`
+              ? `${shares} ${shares === 1 ? "share" : "shares"}${fee ? ` + ${money(fee)} fee (5%)` : ""} · charged when shopping starts`
               : "Tap + to add a share"}
           </Text>
           <Text accessibilityLiveRegion="polite" style={type.total}>

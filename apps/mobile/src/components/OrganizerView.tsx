@@ -70,9 +70,12 @@ function currentStep(v: OrderView) {
 export function OrganizerView({
   view: v,
   refresh,
+  onMyShare,
 }: {
   view: OrderView;
   refresh: () => Promise<void>;
+  /** Switch to the My share view so the organizer can add their own share. */
+  onMyShare?: () => void;
 }) {
   const o = v.order;
   const current = currentStep(v);
@@ -107,7 +110,12 @@ export function OrganizerView({
       {o.status === "completed" && viewing === 2 ? (
         <Done view={v} />
       ) : viewing === 0 ? (
-        <CollectStep view={v} refresh={refresh} readOnly={readOnly} />
+        <CollectStep
+          view={v}
+          refresh={refresh}
+          readOnly={readOnly}
+          onMyShare={onMyShare}
+        />
       ) : viewing === 1 ? (
         <ShopStep view={v} refresh={refresh} readOnly={readOnly} />
       ) : (
@@ -278,15 +286,41 @@ function CollectStep({
   view: v,
   refresh,
   readOnly,
+  onMyShare,
 }: {
   view: OrderView;
   refresh: () => Promise<void>;
   readOnly: boolean;
+  onMyShare?: () => void;
 }) {
   const o = v.order;
-  const claimedTotal = v.items.reduce((n, i) => n + i.claimed, 0);
+  const myShare = v.myClaims.some((c) => c.available && c.quantity > 0);
+  const buyers = v.members.filter(
+    (m) =>
+      m.userId !== v.order.organizerId && m.claims.some((c) => c.quantity > 0),
+  ).length;
   return (
     <>
+      {!readOnly && !myShare && (
+        <View
+          style={[
+            styles.card,
+            { gap: 8, borderWidth: 2, borderColor: brand.orange },
+          ]}
+        >
+          <Text style={styles.h3}>Add your own share</Text>
+          <Text style={styles.text}>
+            Organizers split runs they’re shopping for anyway, so you need at
+            least one share before shares can close. You pay for it at the
+            store, with no fee.
+          </Text>
+          {onMyShare && (
+            <Button icon="add" onPress={onMyShare}>
+              Add my share
+            </Button>
+          )}
+        </View>
+      )}
       <StepHeader
         title="Collecting shares"
         detail={
@@ -362,11 +396,15 @@ function CollectStep({
           view={v}
           to="locked"
           label="Close shares"
-          warning="Members can’t change their shares after this. You’ll get the shopping list."
+          warning="Members can’t change their shares after this. Each buyer’s card gets a hold for their shares + fee; nothing is charged until you start shopping."
           refresh={refresh}
-          disabled={claimedTotal === 0}
+          disabled={!myShare || buyers === 0}
           blocker={
-            claimedTotal === 0 ? "Waiting for the first share." : undefined
+            !myShare
+              ? "Add your own share first: open the My share tab. You pay for it at the store."
+              : buyers === 0
+                ? "Waiting for someone else to join. If nobody joins by the deadline, the group is cancelled."
+                : undefined
           }
         />
       )}
@@ -604,6 +642,7 @@ function ShopStep({
     (i) => i.shortfall > 0 && i.shortfallDecision === "pending",
   ).length;
   const shopping = o.status === "shopping";
+  const declined = v.members.filter((m) => m.hold?.status === "failed");
   return (
     <>
       <StepHeader
@@ -656,15 +695,17 @@ function ShopStep({
           view={v}
           to="shopping"
           label="Start shopping"
-          warning="You’ll tick items off as you buy them."
+          warning="Every buyer’s hold is charged now and the item money is released to you. You’ll tick items off as you buy them."
           refresh={refresh}
-          disabled={pending > 0 || needed.length === 0}
+          disabled={pending > 0 || needed.length === 0 || declined.length > 0}
           blocker={
-            pending > 0
-              ? `Decide what to do with ${pending} unfilled pack${pending === 1 ? "" : "s"} first.`
-              : needed.length === 0
-                ? "Nothing to buy. You can cancel under More options."
-                : undefined
+            declined.length > 0
+              ? `Waiting on ${declined.length} ${declined.length === 1 ? "buyer" : "buyers"} to fix a declined card (until ${when(declined[0].hold!.retryUntil!)}). After that their shares drop and you can start.`
+              : pending > 0
+                ? `Decide what to do with ${pending} unfilled pack${pending === 1 ? "" : "s"} first.`
+                : needed.length === 0
+                  ? "Nothing to buy. You can cancel under More options."
+                  : undefined
           }
         />
       )}
@@ -1106,31 +1147,48 @@ function Celebrate({
 
 /** Money members have paid in, so the organizer knows what they can spend. */
 function MoneyCard({ view: v }: { view: OrderView }) {
-  const members = v.members.filter((m) => m.estimateCents > 0);
-  const expected = members.reduce(
-    (n, m) => n + m.estimateCents + m.feeCents,
-    0,
+  const buyers = v.members.filter(
+    (m) => m.userId !== v.order.organizerId && m.estimateCents > 0,
   );
-  const unpaid = members.filter((m) => m.paidCents <= 0).length;
+  const expected = buyers.reduce((n, m) => n + m.estimateCents + m.feeCents, 0);
+  const declined = buyers.filter((m) => m.hold?.status === "failed").length;
   const p = v.payouts;
+  const open = v.order.status === "open";
+  const locked = v.order.status === "locked";
   return (
     <View style={[styles.card, { gap: 10 }]}>
       <View style={styles.between}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.text}>Money collected</Text>
+          <Text style={styles.text}>
+            {open
+              ? "Buyers’ shares"
+              : locked
+                ? "Held on cards"
+                : "Money collected"}
+          </Text>
           <Text style={type.mono}>
-            Held safely by POOLD until it’s released
+            {open
+              ? "Nothing is charged while shares are open"
+              : locked
+                ? "Charged when you start shopping"
+                : "Held safely by POOLD until it’s released"}
           </Text>
         </View>
         <Text style={styles.h3}>
-          {money(p?.collectedCents ?? 0)} of {money(expected)}
+          {open
+            ? money(expected)
+            : locked
+              ? `${money(p?.authorizedCents ?? 0)} of ${money(expected)}`
+              : money(p?.collectedCents ?? 0)}
         </Text>
       </View>
-      <ProgressBar
-        value={p?.collectedCents ?? 0}
-        total={Math.max(expected, 1)}
-      />
-      {p && (
+      {!open && (
+        <ProgressBar
+          value={locked ? (p?.authorizedCents ?? 0) : (p?.collectedCents ?? 0)}
+          total={Math.max(expected, 1)}
+        />
+      )}
+      {p && !open && !locked && (
         <View style={{ gap: 6 }}>
           <View style={styles.between}>
             <Text style={type.mono}>Released to you</Text>
@@ -1139,37 +1197,36 @@ function MoneyCard({ view: v }: { view: OrderView }) {
             </Text>
           </View>
           <View style={styles.between}>
-            <Text style={type.mono}>
-              Still held
-              {p.releasedCents ? " (service fees, after hand-out)" : ""}
-            </Text>
+            <Text style={type.mono}>Still held (5% fees, after hand-out)</Text>
             <Text style={type.label}>{money(p.heldCents)}</Text>
           </View>
-          <Text style={[type.mono, { fontSize: 12 }]}>
-            {v.order.status === "open" || v.order.status === "locked"
-              ? "The item money is released when you start shopping. The 5% service fees come after every bag is handed out."
-              : p.heldCents > 0
-                ? "The 5% service fees are released after every bag is handed out."
-                : "Everything has been released. Test mode, no real money."}
-          </Text>
         </View>
       )}
-      {unpaid > 0 && ["open", "locked"].includes(v.order.status) && (
+      {declined > 0 && (
         <Text style={[type.mono, { color: P.beet }]}>
-          {unpaid} {unpaid === 1 ? "person hasn’t" : "people haven’t"} paid.
-          Unpaid shares are dropped when shares close.
+          {declined} {declined === 1 ? "card was" : "cards were"} declined. They
+          have 2 hours to fix it before their shares drop.
         </Text>
       )}
+      <Text style={[type.mono, { fontSize: 12 }]}>
+        Your own share isn’t included: you pay for it at the store.
+      </Text>
     </View>
   );
 }
 
 function PaidBadge({ member: m }: { member: Member }) {
-  return m.dueCents > 0 ? (
-    <Badge tone="urgent">{`Owes ${money(m.dueCents)}`}</Badge>
-  ) : (
-    <Badge tone="good">{`Paid ${money(m.paidCents)}`}</Badge>
-  );
+  const h = m.hold;
+  if (h?.status === "failed") return <Badge tone="urgent">Card declined</Badge>;
+  if (h?.status === "authorized")
+    return <Badge tone="neutral">{`Held ${money(h.amountCents)}`}</Badge>;
+  if (m.paidCents > 0)
+    return m.dueCents > 0 ? (
+      <Badge tone="urgent">{`Owes ${money(m.dueCents)}`}</Badge>
+    ) : (
+      <Badge tone="good">{`Paid ${money(m.paidCents)}`}</Badge>
+    );
+  return <Badge tone="neutral">Card saved</Badge>;
 }
 
 /* ---------- Draft review ---------- */

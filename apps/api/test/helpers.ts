@@ -40,6 +40,15 @@ export async function setup() {
       [encoded, `demo-${key}`],
     );
   }
+  // Everyone has a working test card saved, so they can confirm shares.
+  for (const key of ["maya", "jordan", "alex", "priya"])
+    await execute(
+      db,
+      "INSERT INTO payment_methods(user_id,brand,last4,outcome) VALUES(?,'Visa','4242','ok') ON DUPLICATE KEY UPDATE outcome='ok'",
+      [`demo-${key}`],
+    );
+  // Tests publish many groups; the weekly limit is checked in its own test.
+  await execute(db, "UPDATE orders SET published_at=NULL");
   const login = async (key: string) => {
     const result =
       key === "maya"
@@ -72,6 +81,21 @@ export async function setup() {
     const r = await call(`/orders/${id}/publish`, "POST", {}, auth);
     assert.equal(r.status, 200, JSON.stringify(r.body));
   };
+  /** Claim shares of the first item (organizers must claim before closing). */
+  const claim = async (id: string, auth: string, quantity = 1) => {
+    const v = (await call(`/orders/${id}`, "GET", undefined, auth)).body;
+    const r = await call(
+      `/orders/${id}/claims`,
+      "PUT",
+      {
+        revision: v.order.revision,
+        attending: true,
+        claims: [{ itemId: v.items[0].id, quantity }],
+      },
+      auth,
+    );
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+  };
   return {
     db,
     call,
@@ -79,6 +103,7 @@ export async function setup() {
     ids,
     create,
     publish,
+    claim,
     async close() {
       await new Promise<void>((r) => server.close(() => r()));
       for (const oid of ids) {
