@@ -150,6 +150,11 @@ export function OrderRow({
         <Text style={type.cardTitle} numberOfLines={2}>
           {o.name}
         </Text>
+        {o.demoPrices && (
+          <Text style={styles.muted}>
+            Class-project demo prices · not retailer verified
+          </Text>
+        )}
         {items.length > 0 ? (
           <View style={[styles.row, { gap: 6 }]}>
             {items.slice(0, 4).map((item, index) => (

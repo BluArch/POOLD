@@ -5,6 +5,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import {
   type OrderInput,
   type OrderView,
+  type StoreLocation,
   PICKUP_PLACES,
 } from "@poold/contracts";
 import { api, post } from "../../api";
@@ -33,7 +34,18 @@ import {
 
 const HOUR = 3600000;
 const later = (h: number) => roundUp(new Date(Date.now() + h * HOUR));
-const STORES = ["Costco", "Walmart", "Real Canadian Superstore"] as const;
+const STORES = [
+  "Costco",
+  "Real Canadian Wholesale Club",
+  "Bulk Barn",
+  "Walmart",
+] as const;
+const STORE_IDS: Record<string, string> = {
+  Costco: "costco",
+  "Real Canadian Wholesale Club": "wholesale-club",
+  "Bulk Barn": "bulk-barn",
+  Walmart: "walmart",
+};
 
 export default function Create() {
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -44,6 +56,9 @@ function DraftForm({ id }: { id?: string }) {
   const [loaded, setLoaded] = useState(!id);
   const [name, setName] = useState(""),
     [store, setStore] = useState("Costco"),
+    [retailerId, setRetailerId] = useState<string | null>("costco"),
+    [locationId, setLocationId] = useState<string | null>(null),
+    [branches, setBranches] = useState<StoreLocation[]>([]),
     [visibility, setVisibility] = useState<"public" | "private">("public"),
     [max, setMax] = useState(6),
     [cadence, setCadence] = useState<"once" | "weekly" | "monthly">("once"),
@@ -64,7 +79,11 @@ function DraftForm({ id }: { id?: string }) {
         const v = await api<OrderView>(`/orders/${id}`),
           o = v.order;
         setName(o.name);
-        setStore(o.store);
+        setStore(
+          STORES.find((name) => STORE_IDS[name] === o.retailerId) ?? o.store,
+        );
+        setRetailerId(o.retailerId ?? null);
+        setLocationId(o.locationId ?? null);
         setVisibility(o.visibility);
         setMax(o.maxMembers);
         setCadence(o.cadence);
@@ -90,6 +109,25 @@ function DraftForm({ id }: { id?: string }) {
   useEffect(() => {
     if (id) void load();
   }, [id]);
+  useEffect(() => {
+    if (!retailerId) {
+      setBranches([]);
+      return;
+    }
+    let current = true;
+    void api<StoreLocation[]>(
+      `/retailers/${encodeURIComponent(retailerId)}/locations`,
+    )
+      .then((data) => {
+        if (current) setBranches(data);
+      })
+      .catch(() => {
+        if (current) setBranches([]);
+      });
+    return () => {
+      current = false;
+    };
+  }, [retailerId]);
 
   // Keep the dates in order: changing an earlier date pushes later ones along.
   const changeDeadline = (d: Date) => {
@@ -126,10 +164,14 @@ function DraftForm({ id }: { id?: string }) {
   const save = () =>
     a.run(async () => {
       if (!name.trim()) throw new Error("Give the group a name.");
+      if (retailerId && !locationId)
+        throw new Error("Choose a branch for this store.");
       if (problems.length) throw new Error(problems.join(" "));
       const b: OrderInput = {
         name,
         store,
+        retailerId,
+        locationId,
         kind: "community",
         visibility,
         maxMembers: max,
@@ -191,12 +233,45 @@ function DraftForm({ id }: { id?: string }) {
           placeholder="Campus pantry run"
         />
         <Select
-          label="Store"
+          label="Choose a store"
           value={store}
           options={STORES}
-          onChange={setStore}
+          onChange={(next) => {
+            setStore(next);
+            setRetailerId(STORE_IDS[next] ?? null);
+            setLocationId(null);
+            setItems((current) =>
+              current.map((item) =>
+                item.offerId || item.catalogKey ? emptyDraft() : item,
+              ),
+            );
+          }}
           allowOther
         />
+        {!!retailerId && (
+          <Select
+            label="Purchasing branch"
+            value={
+              branches.find((branch) => branch.id === locationId)?.name ?? ""
+            }
+            options={branches.map((branch) => branch.name)}
+            onChange={(next) => {
+              setLocationId(
+                branches.find((branch) => branch.name === next)?.id ?? null,
+              );
+              setItems((current) =>
+                current.map((item) =>
+                  item.offerId || item.catalogKey ? emptyDraft() : item,
+                ),
+              );
+            }}
+          />
+        )}
+        {!!retailerId && !branches.length && (
+          <Text style={styles.muted}>
+            No branch registry is available for this store yet.
+          </Text>
+        )}
         <View style={[styles.row, { flexWrap: "wrap", gap: 8 }]}>
           <Choice
             label="Public group"
@@ -309,6 +384,8 @@ function DraftForm({ id }: { id?: string }) {
             title={items.length > 1 ? `Item ${n + 1}` : "Item"}
             value={d}
             onChange={(next) => update(n, next)}
+            retailerId={retailerId}
+            locationId={locationId}
           />
           {items.length > 1 && (
             <Button

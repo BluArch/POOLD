@@ -41,7 +41,7 @@ const TIPS: {
   {
     icon: "bag-handle-outline",
     title: "Hand out and get your reward",
-    text: "Check each pickup code. Once every bag is handed out you earn $30, or 10% of buyers’ groceries if that’s more.",
+    text: "Check each pickup code. Once every bag is handed out you earn $50, or 10% of buyers’ groceries if that’s more.",
   },
 ];
 
