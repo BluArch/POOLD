@@ -4,6 +4,8 @@ The Expo / React Native app, Node API and MySQL implementation are now in this r
 
 Local preview: `npm run dev` after setup.
 
+**Branch catalogue:** Organizers can select Costco, Real Canadian Wholesale Club, Bulk Barn, or Walmart and a Greater Victoria branch, then search its loaded products. For local demo items, run `npm run db:migrate` followed by `npm run catalogue:seed-demo -w @poold/api`. The seed creates 248 synthetic products and 520 branch offers, with illustrative prices and unverified stock; it refuses production or remote databases. Fresh deployments need an explicit authorized import before branch products appear. Existing groups without a branch retain the original 24-item picker, and manual entry remains available. See [catalogue setup and import instructions](Documentation/implementation/CATALOGUE.md).
+
 **App redesign (layan/app-redesign):**
 
 - **Buying and organizing are separate sides.** Each has its own home, tabs and colour: butter yellow for buying, sage green for organizing. Switch between them at the top of any home screen.

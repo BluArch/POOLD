@@ -1,5 +1,5 @@
 import { palette as P } from "../theme";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View, Text, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -215,8 +215,16 @@ export function ItemEditor({
   const [cursor, setCursor] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [searchError, setSearchError] = useState("");
+  const searchVersion = useRef(0);
   useEffect(() => {
-    if (!locationId || !retailerId || d.chosen) return;
+    searchVersion.current += 1;
+    setResults([]);
+    setCursor(null);
+    setSearchError("");
+    if (!locationId || !retailerId || d.chosen) {
+      setBusy(false);
+      return;
+    }
     let current = true;
     setBusy(true);
     setResults([]);
@@ -242,27 +250,43 @@ export function ItemEditor({
     }, 250);
     return () => {
       current = false;
+      searchVersion.current += 1;
       clearTimeout(timer);
     };
   }, [retailerId, locationId, search, d.chosen]);
   const loadMore = async () => {
     if (!cursor || busy || !retailerId || !locationId) return;
+    const version = searchVersion.current;
     setBusy(true);
     try {
       const page = await api<CataloguePage>(
         `/catalogue/products?retailerId=${encodeURIComponent(retailerId)}&locationId=${encodeURIComponent(locationId)}&query=${encodeURIComponent(search.trim())}&cursor=${cursor}`,
       );
+      if (version !== searchVersion.current) return;
       setResults((current) => [...current, ...page.items]);
       setCursor(page.nextCursor);
     } catch (e) {
-      setSearchError(e instanceof Error ? e.message : "Search failed.");
+      if (version === searchVersion.current)
+        setSearchError(e instanceof Error ? e.message : "Search failed.");
     } finally {
-      setBusy(false);
+      if (version === searchVersion.current) setBusy(false);
     }
   };
   const set = (change: Partial<ItemDraft>) => onChange({ ...d, ...change });
 
   if (!d.chosen) {
+    const catalogueItems = [
+      ...new Map(results.map((item) => [item.id, item])).values(),
+    ];
+    const query = search.trim().toLowerCase();
+    const legacyMatches = !retailerId
+      ? CATALOG.filter(
+          (item) =>
+            !query ||
+            item.name.toLowerCase().includes(query) ||
+            item.category.toLowerCase().includes(query),
+        )
+      : [];
     return (
       <View style={{ gap: 10 }}>
         <Text style={styles.h3}>{title}</Text>
@@ -273,9 +297,12 @@ export function ItemEditor({
           placeholder="Kraft Dinner, toothpaste, cans…"
         />
         <Text style={styles.muted}>
-          Branch catalogue prices are estimates until checked at purchase. Add
-          an item manually if it is missing.
+          Choose an item to set its share size and review the estimated price.
+          Add an item manually if it is missing.
         </Text>
+        {catalogueItems.some((item) => item.priceSource === "demo") && (
+          <Text style={styles.muted}>Sample items for the class demo.</Text>
+        )}
         <View
           style={{
             borderWidth: 1,
@@ -284,9 +311,24 @@ export function ItemEditor({
             overflow: "hidden",
           }}
         >
-          {results.map((c, i) => (
+          {legacyMatches.map((item) => (
             <Pressable
-              key={c.offerId}
+              key={item.key}
+              accessibilityRole="button"
+              accessibilityLabel={`Choose ${item.name}`}
+              onPress={() => onChange(draftFromCatalog(item))}
+              style={{ padding: 14, gap: 2 }}
+            >
+              <Text style={styles.h3}>{item.name}</Text>
+              <Text style={styles.muted}>
+                {plural(item.packUnits, item.unit)} ({item.unitDetail}) ·{" "}
+                {item.category}
+              </Text>
+            </Pressable>
+          ))}
+          {catalogueItems.map((c, i) => (
+            <Pressable
+              key={c.id}
               accessibilityRole="button"
               accessibilityLabel={`Choose ${c.name}`}
               onPress={() => onChange(draftFromOffer(c))}
@@ -303,17 +345,7 @@ export function ItemEditor({
                 {c.name}
               </Text>
               <Text style={styles.muted}>
-                {c.packLabel} · {money(c.priceCents)} · {c.category} ·{" "}
-                {c.availability === "unknown"
-                  ? "Stock unconfirmed"
-                  : "Listed available"}
-              </Text>
-              <Text style={styles.muted}>
-                {c.priceSource === "demo"
-                  ? "Class-project demo estimate · stock unverified"
-                  : c.observedAt
-                    ? `Price checked ${new Date(c.observedAt).toLocaleDateString("en-CA")}`
-                    : "Price check unavailable"}
+                {c.packLabel} · {c.category}
               </Text>
             </Pressable>
           ))}
@@ -323,13 +355,18 @@ export function ItemEditor({
           {!!searchError && (
             <Text style={[styles.muted, { padding: 14 }]}>{searchError}</Text>
           )}
-          {!busy && !searchError && results.length === 0 && (
-            <Text style={[styles.muted, { padding: 14 }]}>
-              {locationId
-                ? "No eligible products loaded for this branch."
-                : "Choose a branch to search its catalogue."}
-            </Text>
-          )}
+          {!busy &&
+            !searchError &&
+            results.length === 0 &&
+            legacyMatches.length === 0 && (
+              <Text style={[styles.muted, { padding: 14 }]}>
+                {!retailerId
+                  ? "No match in the list."
+                  : locationId
+                    ? "No eligible products loaded for this branch."
+                    : "Choose a branch to search its catalogue."}
+              </Text>
+            )}
           {!!cursor && (
             <Pressable
               accessibilityRole="button"

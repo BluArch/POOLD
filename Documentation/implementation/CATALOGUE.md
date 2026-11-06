@@ -2,11 +2,13 @@
 
 November 5, 2026. The API has retailer and Greater Victoria branch records, product and offer tables, immutable price observations, a bounded branch search endpoint, and a local authorized-export importer. Organizers can choose a branch, search orderable offers, select fixed or exact gram/millilitre shares, and save a price/pack snapshot. Manual items and old drafts remain supported. There are **no retailer product imports in this repository** and no claim of complete branch assortment or live stock.
 
+The item picker shows each product once, with its name, pack size, and category. Prices, availability, and price-check timestamps are hidden in the catalogue list; organizers review the estimate after choosing an item.
+
 ## Class-project demo catalogue
 
-The local development database is populated with 248 generated products and 520 branch offers: 56 products each for Costco, Wholesale Club, and Walmart, plus 80 for Bulk Barn (including 24 weighted bulk foods). These names and prices are illustrative; they were not copied from retailer product feeds or observed at branches. The API, item picker, order cards, and share cards mark them as **class-project demo estimates**. No verified savings comparison is inferred. Demo offers have unknown stock and remain usable after their fixed fixture date because they are explicitly synthetic. They do not count as a successful full retailer sync.
+The committed demo seed generates 248 products and 520 branch offers in a local development database: 56 products each for Costco, Wholesale Club, and Walmart, plus 80 for Bulk Barn (including 24 weighted bulk foods). These names and prices are illustrative; they were not copied from retailer product feeds or observed at branches. The API, item picker, order cards, and share cards mark them as **class-project demo estimates**. No verified savings comparison is inferred. Demo offers have unknown stock and remain usable after their fixed fixture date because they are explicitly synthetic. They do not count as a successful full retailer sync.
 
-Run the local-only, repeatable seed after migrations with `npm run catalogue:seed-demo -w @poold/api`. It refuses production and non-local database hosts. `npm run catalogue:status -w @poold/api` reports products, offers, and source coverage. Repeating the seed leaves product, offer, and observation counts unchanged.
+A fresh clone or deployment has no branch products until explicitly populated. Run `npm run db:migrate` to apply catalogue migrations 013–016, then run the local-only, repeatable seed with `npm run catalogue:seed-demo -w @poold/api`. It refuses production and non-local database hosts. `npm run catalogue:status -w @poold/api` reports products, offers, and source coverage. Repeating the seed leaves product, offer, and observation counts unchanged.
 
 ## Verified branch registry
 

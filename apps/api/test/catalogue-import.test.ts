@@ -152,11 +152,24 @@ test("authorized full export retains all categories, is idempotent and fails clo
     await writeFile(manifest, JSON.stringify(config));
     const malformedScope = structuredClone(rowsIn);
     malformedScope[0].offers[0].priceCents = 1199;
-    malformedScope[0].offers[0].observedAt = new Date(Date.now() + 1000).toISOString();
-    malformedScope[1].offers[0].locationId = "00000000-0000-4000-8000-000000003109";
-    await writeFile(file, malformedScope.map((x) => JSON.stringify(x)).join("\n") + "\n");
-    await assert.rejects(() => importCatalogue(s.db, manifest, file), /mismatched retailer\/channel/);
-    const unchangedOffer = await first(s.db, "SELECT price_cents FROM store_offers WHERE source_id=? AND source_offer_id='FOOD-1'", [source.id]);
+    malformedScope[0].offers[0].observedAt = new Date(
+      Date.now() + 1000,
+    ).toISOString();
+    malformedScope[1].offers[0].locationId =
+      "00000000-0000-4000-8000-000000003109";
+    await writeFile(
+      file,
+      malformedScope.map((x) => JSON.stringify(x)).join("\n") + "\n",
+    );
+    await assert.rejects(
+      () => importCatalogue(s.db, manifest, file),
+      /mismatched retailer\/channel/,
+    );
+    const unchangedOffer = await first(
+      s.db,
+      "SELECT price_cents FROM store_offers WHERE source_id=? AND source_offer_id='FOOD-1'",
+      [source.id],
+    );
     assert.equal(unchangedOffer.price_cents, 1099);
   } finally {
     await s.close();
