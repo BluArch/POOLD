@@ -196,6 +196,8 @@ test("Requests: creators edit/delete their own, groups take requests while open"
       .body;
     assert.ok(updates.some((u: any) => /was added to/.test(u.message)));
     // Closed groups stop taking requests and new items.
+    await h.claim(oid, t.maya);
+    await h.claim(oid, t.jordan);
     assert.equal(
       (
         await call(

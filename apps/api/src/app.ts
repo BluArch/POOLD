@@ -11,10 +11,9 @@ import { auth } from "./auth.js";
 import { mailer, type MailSender } from "./mail.js";
 import { communication } from "./communication.js";
 import { fulfillment } from "./fulfillment.js";
-import { payments, stripeKey } from "./payments.js";
+import { payments } from "./payments.js";
 import { claims } from "./claims.js";
 import { orders } from "./orders.js";
-import { wishlists } from "./wishlists.js";
 import { errorHandler, RATE_LIMIT_ERROR } from "./errors.js";
 /**
  * When the API also serves the web app (hosting, or the phone demo link), the
@@ -50,7 +49,6 @@ export function createApp(
     process.env.RENDER_EXTERNAL_URL ??
     "http://localhost:8081";
   const sendMail = options.sendMail ?? mailer(production);
-  stripeKey(); // Refuses to start with a live Stripe key.
   const app = express();
   app.disable("x-powered-by");
   if (process.env.TRUST_PROXY_HOPS) {
@@ -122,17 +120,9 @@ export function createApp(
     communication(db, sendMail, process.env.PUBLIC_APP_URL ?? origin),
   );
   app.use("/api", fulfillment(db));
-  app.use(
-    "/api",
-    payments(
-      db,
-      process.env.PUBLIC_APP_URL ?? process.env.RENDER_EXTERNAL_URL ?? origin,
-      sendMail,
-    ),
-  );
+  app.use("/api", payments(db));
   app.use("/api", claims(db));
   app.use("/api", orders(db));
-  app.use("/api", wishlists(db));
   if (demo)
     app.get("/api/dev/outbox", async (_req, res) => {
       try {

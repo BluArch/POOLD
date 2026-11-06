@@ -7,7 +7,6 @@ import { getOrder } from "./order-model.js";
 import { fail } from "./errors.js";
 import { notify } from "./notifications.js";
 import { id } from "./security.js";
-import { settle } from "./payments.js";
 export function claims(db: Pool) {
   const r = Router();
   r.put("/orders/:id/claims", verified, async (req, res) => {
@@ -47,6 +46,22 @@ export function claims(db: Pool) {
         [o.id, req.user!.id],
       );
       const positive = b.claims.some((i) => i.quantity > 0);
+      // Buyers save a card when they confirm shares. Nothing is charged now;
+      // a hold is placed when shares close.
+      if (
+        positive &&
+        o.organizer_id !== req.user!.id &&
+        !(await first(
+          c,
+          "SELECT user_id FROM payment_methods WHERE user_id=?",
+          [req.user!.id],
+        ))
+      )
+        fail(
+          409,
+          "CARD_REQUIRED",
+          "Add a card first. You won’t be charged until shares close.",
+        );
       if (positive && !existing) {
         const me = await publicUser(c as any, req.user!.id);
         if (me.blockedUntil)
@@ -112,8 +127,6 @@ export function claims(db: Pool) {
           "DELETE FROM memberships WHERE order_id=? AND user_id=?",
           [o.id, req.user!.id],
         );
-      // Fewer shares than already paid for: refund the difference.
-      await settle(c, o, req.user!.id, "you changed your shares");
       await notify(
         c,
         o.organizer_id,

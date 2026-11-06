@@ -126,8 +126,10 @@ export const profileInput = z
 export const isUvicEmail = (email: string) =>
   /^[^@\s]+@uvic\.ca$/i.test(email.trim());
 
-/** Buyers pay a 5% service fee to the organizer; organizers don't pay it. */
+/** Buyers pay a 5% service fee to the organizer; organizers pay nothing in the app. */
 export const FEE_RATE = 0.05;
+/** An organizer can publish this many groups in any 7 days. */
+export const WEEKLY_RUN_LIMIT = 2;
 export const feeFor = (sharesCents: number, organizer = false) =>
   organizer ? 0 : Math.round(sharesCents * FEE_RATE);
 
@@ -205,6 +207,8 @@ export interface OrderSummary {
   joined: boolean;
   /** Shares the signed-in user has claimed in this group. */
   myShares: number;
+  /** When the group was published (counts toward the weekly limit). */
+  publishedAt: string | null;
   /** Organizer's average rating from buyers, and how many ratings. */
   organizerRating: { average: number; count: number } | null;
   preview: string;
@@ -277,6 +281,24 @@ export interface Member {
   dueCents: number;
   /** Payments and refunds, newest first. */
   payments: Payment[];
+  /** The card hold placed when shares closed, if any. */
+  hold: Hold | null;
+}
+/** Money held on a buyer's card when shares close, charged when shopping starts. */
+export interface Hold {
+  status: "authorized" | "failed" | "captured" | "released";
+  amountCents: number;
+  cardBrand: string | null;
+  cardLast4: string | null;
+  /** Why it failed, e.g. "Card declined". */
+  reason: string | null;
+  /** A failed hold must be fixed before this time, or the shares drop. */
+  retryUntil: string | null;
+}
+/** The buyer's saved test card. Only brand and last four digits are kept. */
+export interface SavedCard {
+  brand: string;
+  last4: string;
 }
 export interface Payment {
   id: string;
@@ -298,8 +320,6 @@ export interface OrderView {
   inviteToken?: string;
   collectionCode?: string;
   isOrganizer: boolean;
-  /** How payments run: Stripe test checkout, or a built-in demo screen. */
-  payments: "stripe_test" | "demo";
   /** Service fee on your shares (0 if you organize this group). */
   myFeeCents: number;
   /** Organizer only: money held by POOLD and what's been released to them. */
@@ -312,6 +332,9 @@ export interface OrderView {
   canRate: boolean;
 }
 export interface PayoutSummary {
+  /** Held on buyers' cards, not charged yet. */
+  authorizedCents: number;
+  /** Charged to buyers, minus refunds. */
   collectedCents: number;
   releasedCents: number;
   heldCents: number;
@@ -840,53 +863,3 @@ export const resetPasswordInput = z.object({
     .max(128, "Your password must be 128 characters or fewer."),
   native: z.boolean().optional(),
 });
-
-/** A list of things buyers want, waiting for someone to organize it. */
-export interface Wishlist {
-  id: string;
-  title: string;
-  store: string;
-  pickupLocation: string;
-  note: string;
-  status: "open" | "claimed" | "closed";
-  creatorName: string;
-  mine: boolean;
-  joined: boolean;
-  memberCount: number;
-  /** Group made from this wishlist, once someone organizes it. */
-  orderId: string | null;
-  organizerName: string | null;
-  items: WishlistItem[];
-  createdAt: string;
-}
-export interface WishlistItem {
-  id: string;
-  name: string;
-  catalogKey: string | null;
-  wants: number;
-  wanted: boolean;
-}
-const wishItemInput = z.object({
-  name: z
-    .string()
-    .trim()
-    .min(1, "Name the item.")
-    .max(120, "Keep item names under 120 characters."),
-  catalogKey: z.string().max(40).nullable().default(null),
-});
-export const wishlistInput = z.object({
-  title: z
-    .string({ error: "Give the wishlist a name." })
-    .trim()
-    .min(1, "Give the wishlist a name.")
-    .max(80, "Keep the name under 80 characters."),
-  store: z.string().trim().min(1, "Choose a store.").max(80),
-  pickupLocation: z.string().trim().min(1, "Choose a pickup place.").max(160),
-  note: z.string().trim().max(280).default(""),
-  items: z
-    .array(wishItemInput)
-    .min(1, "Add at least one item.")
-    .max(30, "Up to 30 items."),
-});
-export type WishlistInput = z.infer<typeof wishlistInput>;
-export const wishlistItemInput = wishItemInput;

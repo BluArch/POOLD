@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { setup } from "./helpers.js";
-import { stripeKey } from "../src/payments.js";
+import { execute } from "../src/db.js";
+import { runJobs } from "../src/jobs.js";
 
-test("payments: buyers pay when they confirm shares, refunds follow changes", async () => {
+test("payments: no charge while open, hold at close, charge when shopping starts", async () => {
   const h = await setup();
   const { call, tokens: t } = h;
   try {
@@ -11,130 +12,179 @@ test("payments: buyers pay when they confirm shares, refunds follow changes", as
     await h.publish(id);
     const view = async (auth: string) =>
       (await call(`/orders/${id}`, "GET", undefined, auth)).body;
-    const v = await view(t.maya);
-    assert.equal(v.payments, "demo");
-    const iid = v.items[0].id;
-    const claim = async (quantity: number) =>
-      call(
-        `/orders/${id}/claims`,
-        "PUT",
-        {
-          revision: (await view(t.jordan)).order.revision,
-          attending: true,
-          claims: [{ itemId: iid, quantity }],
-        },
-        t.jordan,
-      );
-    assert.equal((await claim(2)).status, 200);
-    let member = await view(t.jordan);
-    // Buyers pay their shares plus the 5% service fee.
-    const owed = member.myEstimateCents + member.myFeeCents;
-    assert.ok(member.myFeeCents > 0);
-    assert.equal(member.myFeeCents, Math.round(member.myEstimateCents * 0.05));
-    assert.equal(member.mine.dueCents, owed);
-    assert.equal(member.mine.paidCents, 0);
-    // Pay before shopping, so the organizer has the money.
-    const due = await call(`/orders/${id}/pay`, "POST", {}, t.jordan);
-    assert.equal(due.status, 200);
-    assert.equal(due.body.amountCents, owed);
-    const paid = await call(
-      `/orders/${id}/pay/demo`,
-      "POST",
-      { brand: "Visa", last4: "4242" },
-      t.jordan,
-    );
-    assert.equal(paid.status, 200);
-    member = await view(t.jordan);
-    assert.equal(member.mine.paidCents, owed);
-    assert.equal(member.mine.dueCents, 0);
-    assert.equal(member.mine.payments[0].cardLast4, "4242");
-    assert.equal(
-      (await call(`/orders/${id}/pay/demo`, "POST", {}, t.jordan)).body.error
-        .code,
-      "NOTHING_TO_PAY",
-    );
-    // Organizers pay for their own shares too, without the fee.
-    const mayaClaim = await call(
-      `/orders/${id}/claims`,
-      "PUT",
-      {
-        revision: (await view(t.maya)).order.revision,
-        attending: true,
-        claims: [{ itemId: iid, quantity: 1 }],
-      },
+    const iid = (await view(t.maya)).items[0].id;
+    // Changing your mind while open costs nothing.
+    await h.claim(id, t.jordan, 2);
+    await h.claim(id, t.jordan, 1);
+    let jordan = await view(t.jordan);
+    assert.equal(jordan.mine.paidCents, 0);
+    assert.equal(jordan.mine.payments.length, 0);
+    assert.equal(jordan.mine.hold, null);
+    assert.equal(jordan.myFeeCents, Math.round(jordan.myEstimateCents * 0.05));
+    await h.claim(id, t.maya);
+    // Organizers pay at the store, not in the app.
+    const maya = await view(t.maya);
+    assert.equal(maya.myFeeCents, 0);
+    assert.equal(maya.mine.dueCents, 0);
+    const status = (s: string) =>
+      call(`/orders/${id}/status`, "POST", { status: s }, t.maya);
+    assert.equal((await status("locked")).status, 200);
+    jordan = await view(t.jordan);
+    const owed = jordan.myEstimateCents + jordan.myFeeCents;
+    assert.equal(jordan.mine.hold.status, "authorized");
+    assert.equal(jordan.mine.hold.amountCents, owed);
+    // A price change while closed updates the hold, still no charge.
+    await call(
+      `/orders/${id}/items/${iid}`,
+      "PATCH",
+      { priceCents: 500 },
       t.maya,
     );
-    assert.equal(mayaClaim.status, 200);
-    const mine = await view(t.maya);
-    assert.equal(mine.myFeeCents, 0);
-    assert.equal(mine.mine.dueCents, mine.myEstimateCents);
-    assert.equal(
-      (await call(`/orders/${id}/pay/demo`, "POST", {}, t.maya)).status,
-      200,
+    jordan = await view(t.jordan);
+    assert.ok(jordan.mine.hold.amountCents < owed);
+    assert.equal(jordan.mine.paidCents, 0);
+    await call(
+      `/orders/${id}/items/${iid}`,
+      "PATCH",
+      { shortfallDecision: "proceed" },
+      t.maya,
     );
-    // Organizer sees the payment and gets an update.
     const org = await view(t.maya);
-    assert.equal(
-      org.members.find((m: any) => m.userId === "demo-jordan").paidCents,
-      owed,
+    assert.equal(org.payouts.authorizedCents, jordan.mine.hold.amountCents);
+    assert.equal((await status("shopping")).status, 200);
+    jordan = await view(t.jordan);
+    assert.equal(jordan.mine.hold.status, "captured");
+    assert.equal(jordan.mine.paidCents, jordan.mine.hold.amountCents);
+    // A price increase at the store is charged to the saved card.
+    await call(
+      `/orders/${id}/items/${iid}`,
+      "PATCH",
+      { priceCents: 1600 },
+      t.maya,
     );
-    const updates = (await call("/notifications", "GET", undefined, t.maya))
-      .body;
-    assert.ok(updates.some((n: any) => /paid/.test(n.message)));
-    // Fewer shares: the difference is refunded automatically.
-    await claim(1);
-    member = await view(t.jordan);
+    jordan = await view(t.jordan);
+    assert.equal(jordan.mine.dueCents, 0);
     assert.equal(
-      member.mine.paidCents,
-      member.myEstimateCents + member.myFeeCents,
+      jordan.mine.paidCents,
+      jordan.myEstimateCents + jordan.myFeeCents,
     );
-    assert.equal(member.mine.payments[0].kind, "refund");
-    // More shares: a balance appears and can be paid.
-    await claim(2);
-    member = await view(t.jordan);
-    assert.ok(member.mine.dueCents > 0);
-    assert.equal(
-      (await call(`/orders/${id}/pay/demo`, "POST", {}, t.jordan)).status,
-      200,
-    );
-    // Cancelling the group refunds everything.
-    await call(`/orders/${id}/status`, "POST", { status: "cancelled" }, t.maya);
-    member = await view(t.jordan);
-    assert.equal(member.mine.paidCents, 0);
+    // Cancelling refunds everything.
+    await status("cancelled");
+    assert.equal((await view(t.jordan)).mine.paidCents, 0);
   } finally {
     await h.close();
   }
 });
 
-test("payments: unpaid shares are dropped when shares close", async () => {
+test("payments: declined cards get 2 hours, shopping waits, then shares drop", async () => {
   const h = await setup();
   const { call, tokens: t } = h;
   try {
     const id = await h.create();
     await h.publish(id);
+    await h.claim(id, t.maya);
+    await h.claim(id, t.jordan);
+    await h.claim(id, t.alex);
+    // Alex's card will be declined when the hold is placed.
+    await call(
+      "/payment-method",
+      "PUT",
+      { brand: "Visa", last4: "0002", outcome: "declined" },
+      t.alex,
+    );
+    const status = (s: string) =>
+      call(`/orders/${id}/status`, "POST", { status: s }, t.maya);
+    assert.equal((await status("locked")).status, 200);
+    const alex = (await call(`/orders/${id}`, "GET", undefined, t.alex)).body;
+    assert.equal(alex.mine.hold.status, "failed");
+    assert.ok(alex.mine.hold.retryUntil);
+    // Shopping can't start until every card is authorized.
+    assert.equal((await status("shopping")).body.error.code, "HOLDS_PENDING");
+    // Fixing the card re-authorizes automatically.
+    await call(
+      "/payment-method",
+      "PUT",
+      { brand: "Visa", last4: "4242", outcome: "ok" },
+      t.alex,
+    );
+    assert.equal(
+      (await call(`/orders/${id}`, "GET", undefined, t.alex)).body.mine.hold
+        .status,
+      "authorized",
+    );
+    // Declined again and never fixed: after 2 hours the shares drop.
+    await call(
+      "/payment-method",
+      "PUT",
+      { brand: "Visa", last4: "9995", outcome: "funds" },
+      t.alex,
+    );
     const v = (await call(`/orders/${id}`, "GET", undefined, t.maya)).body;
-    const iid = v.items[0].id;
-    for (const who of [t.jordan, t.alex])
-      await call(
-        `/orders/${id}/claims`,
-        "PUT",
-        {
-          revision: v.order.revision,
-          attending: true,
-          claims: [{ itemId: iid, quantity: 1 }],
-        },
-        who,
-      );
-    await call(`/orders/${id}/pay/demo`, "POST", {}, t.jordan);
-    await call(`/orders/${id}/status`, "POST", { status: "locked" }, t.maya);
+    await call(
+      `/orders/${id}/items/${v.items[0].id}`,
+      "PATCH",
+      { priceCents: 1300 },
+      t.maya,
+    );
+    assert.equal(
+      (await call(`/orders/${id}`, "GET", undefined, t.alex)).body.mine.hold
+        .status,
+      "failed",
+    );
+    await runJobs(h.db, new Date(Date.now() + 2 * 3600000 + 60000));
     const after = (await call(`/orders/${id}`, "GET", undefined, t.maya)).body;
-    const ids = after.members.map((m: any) => m.userId);
-    assert.ok(ids.includes("demo-jordan"));
-    assert.ok(!ids.includes("demo-alex"));
-    const updates = (await call("/notifications", "GET", undefined, t.alex))
-      .body;
-    assert.ok(updates.some((n: any) => /released/.test(n.message)));
+    assert.ok(!after.members.some((m: any) => m.userId === "demo-alex"));
   } finally {
+    await execute(
+      h.db,
+      "UPDATE payment_methods SET outcome='ok',last4='4242' WHERE user_id='demo-alex'",
+    );
+    await h.close();
+  }
+});
+
+test("organizer rules: own share, buyers needed, 2 runs a week, card before joining", async () => {
+  const h = await setup();
+  const { call, tokens: t } = h;
+  try {
+    const id = await h.create();
+    await h.publish(id);
+    await h.claim(id, t.maya);
+    // Nobody else joined, so there's nothing to split.
+    assert.equal(
+      (await call(`/orders/${id}/status`, "POST", { status: "locked" }, t.maya))
+        .body.error.code,
+      "NO_BUYERS",
+    );
+    // Buyers need a saved card to confirm shares.
+    await execute(
+      h.db,
+      "DELETE FROM payment_methods WHERE user_id='demo-priya'",
+    );
+    const v = (await call(`/orders/${id}`, "GET", undefined, t.priya)).body;
+    const r = await call(
+      `/orders/${id}/claims`,
+      "PUT",
+      {
+        revision: v.order.revision,
+        attending: true,
+        claims: [{ itemId: v.items[0].id, quantity: 1 }],
+      },
+      t.priya,
+    );
+    assert.equal(r.body.error.code, "CARD_REQUIRED");
+    // Two groups a week: this was one, the next is two, the third is refused.
+    const second = await h.create();
+    await h.publish(second);
+    const third = await h.create();
+    const refused = await call(`/orders/${third}/publish`, "POST", {}, t.maya);
+    assert.equal(refused.body.error.code, "WEEKLY_LIMIT");
+  } finally {
+    await execute(
+      h.db,
+      "INSERT IGNORE INTO payment_methods(user_id,brand,last4,outcome) VALUES('demo-priya','Visa','4242','ok')",
+    );
+    await execute(h.db, "UPDATE orders SET published_at=NULL");
     await h.close();
   }
 });
@@ -156,18 +206,5 @@ test("accounts: only UVic emails can sign up or sign in", async () => {
     assert.equal(login.body.error.code, "UVIC_ONLY");
   } finally {
     await h.close();
-  }
-});
-
-test("payments: live Stripe keys are refused", () => {
-  const before = process.env.STRIPE_SECRET_KEY;
-  try {
-    process.env.STRIPE_SECRET_KEY = "sk_live_123";
-    assert.throws(() => stripeKey(), /test mode/);
-    process.env.STRIPE_SECRET_KEY = "sk_test_123";
-    assert.equal(stripeKey(), "sk_test_123");
-  } finally {
-    if (before === undefined) delete process.env.STRIPE_SECRET_KEY;
-    else process.env.STRIPE_SECRET_KEY = before;
   }
 });

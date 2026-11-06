@@ -2,42 +2,76 @@ import React from "react";
 import { Text, View, Pressable } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import type { OrderSummary, Wishlist } from "@poold/contracts";
+import { type OrderSummary, WEEKLY_RUN_LIMIT } from "@poold/contracts";
 import {
   Screen,
   Button,
-  EmptyState,
   styles,
   useResource,
   ResourceState,
 } from "../../components/ui";
-import { WishlistCard } from "../../components/Wishlist";
 import { palette as P, type, roles, brand } from "../../theme";
 import { useSession } from "../../session";
+
+const TIPS: {
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  title: string;
+  text: string;
+}[] = [
+  {
+    icon: "cart-outline",
+    title: "Plan a run you’re doing anyway",
+    text: "Pick a store, sealed bulk packs and a pickup spot. Up to 2 groups a week.",
+  },
+  {
+    icon: "person-add-outline",
+    title: "Add your own share",
+    text: "You have to buy for yourself too. You pay for it at the store.",
+  },
+  {
+    icon: "lock-closed-outline",
+    title: "Close shares",
+    text: "Buyers’ cards get a hold for their shares. Nothing is charged yet.",
+  },
+  {
+    icon: "receipt-outline",
+    title: "Shop and upload proof",
+    text: "Starting shopping charges the holds and releases the item money to you. Upload the receipt and a photo.",
+  },
+  {
+    icon: "bag-handle-outline",
+    title: "Hand out and get your fee",
+    text: "Check each pickup code. The 5% service fees are released when every bag is handed out.",
+  },
+];
 
 const needsYou = (o: OrderSummary) =>
   ["draft", "locked", "shopping", "ready"].includes(o.status) ||
   (o.status === "open" && Date.parse(o.deadline) - Date.now() < 86400000);
 
-/**
- * Organizer home: a quick way into your own groups, then the wishlists
- * buyers posted that are waiting for someone to organize them.
- */
+/** Organizer home: your groups at a glance, then how organizing works. */
 export default function Hub() {
   const r = useResource<OrderSummary[]>("/orders?scope=organizing");
-  const wishes = useResource<Wishlist[]>("/wishlists");
   const s = useSession();
   const all = r.data ?? [];
   const count = (st: string[]) =>
     all.filter((o) => st.includes(o.status)).length;
   const urgent = all.filter(needsYou).length;
-  const waiting = (wishes.data ?? []).filter((w) => !w.mine);
+  // Groups published in the last 7 days count toward the weekly limit.
+  const week = all.filter(
+    (o) =>
+      o.status !== "draft" &&
+      o.status !== "cancelled" &&
+      !!o.publishedAt &&
+      Date.now() - Date.parse(o.publishedAt) < 7 * 86400000,
+  ).length;
+  const runsLeft = Math.max(0, WEEKLY_RUN_LIMIT - week);
   return (
     <Screen
       title={`Hi, ${s.user?.name.split(" ")[0] ?? "there"}`}
       subtitle="Ready to organize a run?"
       roleSwitch
-      onRefresh={() => void Promise.all([r.refresh(), wishes.refresh()])}
+      onRefresh={() => void r.refresh()}
       refreshing={r.loading}
     >
       <Pressable
@@ -84,34 +118,54 @@ export default function Hub() {
         </View>
       </Pressable>
       <Button
-        secondary
         icon="add"
+        disabled={runsLeft <= 0}
         onPress={() => router.navigate("/(tabs)/create")}
       >
-        Start a group from scratch
+        {runsLeft > 0 ? "Start a group" : "Weekly limit reached"}
       </Button>
+      <Text style={[type.mono, { textAlign: "center", marginTop: -6 }]}>
+        {runsLeft > 0
+          ? `${runsLeft} of ${WEEKLY_RUN_LIMIT} groups left this week`
+          : "You can start another group 7 days after your last one."}
+      </Text>
 
-      <View>
-        <Text
-          style={[type.section, { marginBottom: 2 }]}
-          accessibilityRole="header"
-        >
-          Groups looking for an organizer
+      <View style={[styles.card, { gap: 12 }]}>
+        <Text style={styles.h2} accessibilityRole="header">
+          How organizing works
         </Text>
-        <Text style={[type.mono, { marginBottom: 12 }]}>
-          Buyers posted what they want. Pick one up and it becomes your group.
-        </Text>
-        <ResourceState resource={wishes} />
-        {waiting.map((w) => (
-          <WishlistCard key={w.id} wishlist={w} organizer />
+        {TIPS.map((tip, n) => (
+          <View
+            key={tip.title}
+            style={[styles.row, { alignItems: "flex-start" }]}
+          >
+            <View
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 16,
+                backgroundColor: roles.organizing.tab,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons name={tip.icon} size={17} color={P.ink} />
+            </View>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={type.label}>
+                {n + 1}. {tip.title}
+              </Text>
+              <Text style={type.mono}>{tip.text}</Text>
+            </View>
+          </View>
         ))}
-        {wishes.data && waiting.length === 0 && (
-          <EmptyState
-            icon="list-outline"
-            title="No requests right now"
-            message="When buyers post a wishlist, it shows up here."
-          />
-        )}
+        <Text
+          accessibilityRole="link"
+          onPress={() => router.push("/policies")}
+          style={[type.label, { color: P.carrot }]}
+        >
+          Payments and no-show rules →
+        </Text>
       </View>
       <ResourceState resource={r} />
     </Screen>

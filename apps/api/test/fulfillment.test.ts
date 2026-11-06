@@ -17,21 +17,35 @@ test("Phase D: lock, resolve shortfall, shop, pack, collect once, complete and r
       { revision: 1, attending: true, claims: [{ itemId: iid, quantity: 2 }] },
       t.jordan,
     );
-    // Buyers pay up front; unpaid shares would be dropped at close.
-    assert.equal(
-      (await call(`/orders/${id}/pay/demo`, "POST", {}, t.jordan)).status,
-      200,
-    );
     const status = (status: string, auth = t.maya) =>
       call(`/orders/${id}/status`, "POST", { status }, auth);
     const change = (body: unknown, auth = t.maya) =>
       call(`/orders/${id}/items/${iid}`, "PATCH", body, auth);
     assert.equal((await status("shopping")).status, 409);
     assert.equal((await status("locked", t.jordan)).status, 403);
+    // The organizer has to be buying too.
+    assert.equal((await status("locked")).body.error.code, "ORGANIZER_SHARE");
+    await h.claim(id, t.maya);
+    // Nothing is charged before shares close.
+    assert.equal((await view(t.jordan)).mine.paidCents, 0);
     assert.equal((await status("locked")).status, 200);
+    // Closing places a hold on the buyer's card; still no charge.
+    let buyer = await view(t.jordan);
+    assert.equal(buyer.mine.hold.status, "authorized");
+    assert.equal(
+      buyer.mine.hold.amountCents,
+      buyer.myEstimateCents + buyer.myFeeCents,
+    );
+    assert.equal(buyer.mine.paidCents, 0);
+    // The organizer doesn't pay through the app.
+    assert.equal((await view()).mine.hold, null);
     assert.equal((await status("shopping")).body.error.code, "SHORTFALL");
     await change({ shortfallDecision: "proceed" });
     assert.equal((await status("shopping")).status, 200);
+    // Starting shopping charges the hold.
+    buyer = await view(t.jordan);
+    assert.equal(buyer.mine.hold.status, "captured");
+    assert.equal(buyer.mine.paidCents, buyer.mine.hold.amountCents);
     assert.equal((await status("ready")).status, 409);
     assert.equal(
       (
@@ -94,11 +108,17 @@ test("Phase D: lock, resolve shortfall, shop, pack, collect once, complete and r
     const wrongMember = await call(
       `/orders/${id}/collect`,
       "POST",
-      { code: member.collectionCode, userId: "demo-maya" },
+      { code: member.collectionCode, userId: "demo-alex" },
       t.maya,
     );
     assert.equal(wrongMember.status, 409);
     assert.equal(wrongMember.body.error.code, "WRONG_MEMBER");
+    // The organizer's own bag needs no code.
+    assert.equal(
+      (await view()).members.find((m: any) => m.userId === "demo-maya")
+        .collectedAt !== null,
+      true,
+    );
     const cs = await Promise.all([
       call(
         `/orders/${id}/collect`,
@@ -239,17 +259,11 @@ test("Phase D: unavailable items and changed prices invalidate estimates and not
     assert.equal(unavailable.myEstimateCents, 0);
     assert.equal(unavailable.myClaims[0].quantity, 1);
     assert.equal(unavailable.myClaims[0].available, false);
-    await call(`/orders/${id}/status`, "POST", { status: "locked" }, t.maya);
+    // With every share unavailable there's nothing to split.
     assert.equal(
-      (
-        await call(
-          `/orders/${id}/status`,
-          "POST",
-          { status: "shopping" },
-          t.maya,
-        )
-      ).body.error.code,
-      "NO_SHARES",
+      (await call(`/orders/${id}/status`, "POST", { status: "locked" }, t.maya))
+        .body.error.code,
+      "ORGANIZER_SHARE",
     );
     assert.equal(
       (

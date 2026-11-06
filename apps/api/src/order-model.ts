@@ -1,4 +1,4 @@
-import { stripeKey, ledger, payoutSummary } from "./payments.js";
+import { ledger, payoutSummary } from "./payments.js";
 import type {
   OrderInput,
   OrderSummary,
@@ -91,6 +91,7 @@ export async function summary(
     organizerId: o.organizer_id,
     joined: !!stats.joined,
     myShares: Number(stats.my_shares),
+    publishedAt: o.published_at ? iso(o.published_at) : null,
     organizerRating: await organizerRating(db, o.organizer_id),
     preview: stats.preview ?? "",
     previewItems: previews.map((i) => ({
@@ -231,7 +232,6 @@ export async function orderView(
     mine: members.find((m) => m.userId === uid) ?? null,
     members: o.organizer_id === uid ? members : [],
     isOrganizer: o.organizer_id === uid,
-    payments: stripeKey() ? "stripe_test" : "demo",
     ...(o.organizer_id === uid ? { inviteToken: o.invite_token } : {}),
     ...(ct && o.status === "ready" ? { collectionCode: ct.code } : {}),
   };

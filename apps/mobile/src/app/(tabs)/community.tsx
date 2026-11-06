@@ -2,14 +2,8 @@ import { palette as P } from "../../theme";
 import React, { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { router } from "expo-router";
-import {
-  type OrderSummary,
-  type Wishlist,
-  PICKUP_PLACES,
-} from "@poold/contracts";
-import { WishlistCard } from "../../components/Wishlist";
+import { type OrderSummary, PICKUP_PLACES } from "@poold/contracts";
 import { TourTarget } from "../../components/Tour";
-import { Segmented } from "../../components/Sections";
 import {
   Screen,
   Button,
@@ -118,8 +112,6 @@ export default function Community() {
           : "";
   const query = `${store !== ANY_STORE ? `&store=${encodeURIComponent(store)}` : ""}${place !== ANY_PLACE ? `&pickup=${encodeURIComponent(place)}` : ""}${date ? `&date=${date}` : ""}`;
   const r = useResource<OrderSummary[]>(`/orders?scope=discover${query}`);
-  const wishes = useResource<Wishlist[]>("/wishlists");
-  const [section, setSection] = useState<"groups" | "wishes">("groups");
   const filtered =
     store !== ANY_STORE ||
     place !== ANY_PLACE ||
@@ -146,63 +138,45 @@ export default function Community() {
       title="Find a group"
       subtitle={`${others.length} open near UVic`}
       roleSwitch
-      onRefresh={() => void Promise.all([r.refresh(), wishes.refresh()])}
+      onRefresh={() => void r.refresh()}
       refreshing={r.loading}
       header={
         <View style={{ gap: 4 }}>
-          <TourTarget id="home-sections">
-            <Segmented<"groups" | "wishes">
-              options={[
-                {
-                  value: "groups",
-                  label: `Has an organizer ${others.length}`,
-                },
-                {
-                  value: "wishes",
-                  label: `Needs an organizer ${wishes.data?.length ?? ""}`,
-                },
-              ]}
-              value={section}
-              onChange={setSection}
+          <ChipRow>
+            <Chip
+              dark
+              label="All"
+              selected={frame === "all" && store === ANY_STORE}
+              onPress={() => {
+                setFrame("all");
+                setStore(ANY_STORE);
+              }}
             />
-          </TourTarget>
-          {section === "groups" && (
-            <ChipRow>
+            <Chip
+              dark
+              label="Closing soon"
+              selected={frame === "soon"}
+              onPress={() => setFrame(frame === "soon" ? "all" : "soon")}
+            />
+            {[
+              ["Costco", "Costco"],
+              ["Walmart", "Walmart"],
+              ["Real Canadian Superstore", "Superstore"],
+            ].map(([value, label]) => (
               <Chip
+                key={value}
                 dark
-                label="All"
-                selected={frame === "all" && store === ANY_STORE}
-                onPress={() => {
-                  setFrame("all");
-                  setStore(ANY_STORE);
-                }}
+                label={label}
+                selected={store === value}
+                onPress={() => setStore(store === value ? ANY_STORE : value)}
               />
-              <Chip
-                dark
-                label="Closing soon"
-                selected={frame === "soon"}
-                onPress={() => setFrame(frame === "soon" ? "all" : "soon")}
-              />
-              {[
-                ["Costco", "Costco"],
-                ["Walmart", "Walmart"],
-                ["Real Canadian Superstore", "Superstore"],
-              ].map(([value, label]) => (
-                <Chip
-                  key={value}
-                  dark
-                  label={label}
-                  selected={store === value}
-                  onPress={() => setStore(store === value ? ANY_STORE : value)}
-                />
-              ))}
-              <Chip
-                dark
-                label={`Filters${place !== ANY_PLACE || day !== "any" ? " · On" : ""}`}
-                onPress={() => setFiltersOpen(true)}
-              />
-            </ChipRow>
-          )}
+            ))}
+            <Chip
+              dark
+              label={`Filters${place !== ANY_PLACE || day !== "any" ? " · On" : ""}`}
+              onPress={() => setFiltersOpen(true)}
+            />
+          </ChipRow>
         </View>
       }
     >
@@ -265,99 +239,72 @@ export default function Community() {
         <Button onPress={() => setFiltersOpen(false)}>Show groups</Button>
       </Sheet>
 
-      {section === "wishes" ? (
-        <>
-          <View
-            style={[styles.card, { backgroundColor: brand.yellowSoft, gap: 8 }]}
-          >
-            <Text style={styles.h3}>Can’t find a group for what you need?</Text>
-            <Text style={styles.text}>
-              Start a wishlist. Others can join and add items, and an organizer
-              can turn it into a real group.
-            </Text>
-            <Button
-              icon="add"
-              onPress={() => router.push("/(tabs)/wishlist/new")}
-            >
-              Start a wishlist
-            </Button>
-          </View>
-          <ResourceState resource={wishes} />
-          {wishes.data?.map((w) => (
-            <WishlistCard key={w.id} wishlist={w} />
+      <ResourceState resource={r} />
+      {r.data && joined.length === 0 && !filtered && <HowItWorks />}
+      {joined.length > 0 && (
+        <View>
+          <SectionTitle>You’re in</SectionTitle>
+          {joined.map((o) => (
+            <OrderRow key={o.id} order={o} join />
           ))}
-          {wishes.data?.length === 0 && (
+        </View>
+      )}
+      {r.data && (
+        <View>
+          <SectionTitle>Open groups</SectionTitle>
+          {open.map((o, n) =>
+            n === 0 ? (
+              <TourTarget key={o.id} id="join-button">
+                <OrderRow order={o} join />
+              </TourTarget>
+            ) : (
+              <OrderRow key={o.id} order={o} join />
+            ),
+          )}
+          {open.length === 0 && (
             <EmptyState
-              icon="list-outline"
-              title="No wishlists yet"
-              message="Be the first to say what you want."
-            />
-          )}
-        </>
-      ) : (
-        <>
-          <ResourceState resource={r} />
-          {r.data && joined.length === 0 && !filtered && <HowItWorks />}
-          {joined.length > 0 && (
-            <View>
-              <SectionTitle>You’re in</SectionTitle>
-              {joined.map((o) => (
-                <OrderRow key={o.id} order={o} />
-              ))}
-            </View>
-          )}
-          {r.data && (
-            <View>
-              <SectionTitle>Open groups</SectionTitle>
-              {open.map((o) => (
-                <OrderRow key={o.id} order={o} />
-              ))}
-              {open.length === 0 && (
-                <EmptyState
-                  icon="search-outline"
-                  title={filtered ? "No groups match" : "No open groups yet"}
-                  message={
-                    filtered
-                      ? "Try clearing a filter."
-                      : "Check back soon, or start one yourself."
-                  }
+              icon="search-outline"
+              title={filtered ? "No groups match" : "No open groups yet"}
+              message={
+                filtered
+                  ? "Try clearing a filter."
+                  : "Check back soon, or start one yourself."
+              }
+            >
+              {filtered ? (
+                <Button
+                  secondary
+                  onPress={() => {
+                    setStore(ANY_STORE);
+                    setPlace(ANY_PLACE);
+                    setDay("any");
+                    setFrame("all");
+                  }}
                 >
-                  {filtered ? (
-                    <Button
-                      secondary
-                      onPress={() => {
-                        setStore(ANY_STORE);
-                        setPlace(ANY_PLACE);
-                        setDay("any");
-                        setFrame("all");
-                      }}
-                    >
-                      Clear filters
-                    </Button>
-                  ) : (
-                    <Button
-                      secondary
-                      onPress={() => {
-                        role.setRole("organizing");
-                        router.navigate("/(tabs)/create");
-                      }}
-                    >
-                      Organize a group
-                    </Button>
-                  )}
-                </EmptyState>
+                  Clear filters
+                </Button>
+              ) : (
+                <Button
+                  secondary
+                  onPress={() => {
+                    role.setRole("organizing");
+                    router.navigate("/(tabs)/create");
+                  }}
+                >
+                  Organize a group
+                </Button>
               )}
-            </View>
+            </EmptyState>
           )}
-          {mine.length > 0 && (
-            <View>
-              <SectionTitle>Organized by you</SectionTitle>
-              {mine.map((o) => (
-                <OrderRow key={o.id} order={o} byYou />
-              ))}
-            </View>
-          )}
-        </>
+        </View>
+      )}
+      {mine.length > 0 && (
+        <View>
+          <SectionTitle>Organized by you</SectionTitle>
+          {mine.map((o) => (
+            <OrderRow key={o.id} order={o} byYou />
+          ))}
+        </View>
       )}
       <Pressable
         accessibilityRole="link"

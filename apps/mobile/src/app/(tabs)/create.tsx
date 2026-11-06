@@ -5,9 +5,8 @@ import { router, useLocalSearchParams } from "expo-router";
 import {
   type OrderInput,
   type OrderView,
-  type Wishlist,
-  CATALOG,
   PICKUP_PLACES,
+  WEEKLY_RUN_LIMIT,
 } from "@poold/contracts";
 import { api, post } from "../../api";
 import {
@@ -28,7 +27,6 @@ import {
   ItemEditor,
   type ItemDraft,
   emptyDraft,
-  draftFromCatalog,
   draftFromItem,
   draftProblems,
   draftToInput,
@@ -39,19 +37,10 @@ const later = (h: number) => roundUp(new Date(Date.now() + h * HOUR));
 const STORES = ["Costco", "Walmart", "Real Canadian Superstore"] as const;
 
 export default function Create() {
-  const { id, wishlist } = useLocalSearchParams<{
-    id?: string;
-    wishlist?: string;
-  }>();
-  return (
-    <DraftForm
-      key={id ?? wishlist ?? "new"}
-      id={id}
-      wishlistId={id ? undefined : wishlist}
-    />
-  );
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  return <DraftForm key={id ?? "new"} id={id} />;
 }
-function DraftForm({ id, wishlistId }: { id?: string; wishlistId?: string }) {
+function DraftForm({ id }: { id?: string }) {
   const a = useAction();
   const [loaded, setLoaded] = useState(!id);
   const [name, setName] = useState(""),
@@ -102,28 +91,6 @@ function DraftForm({ id, wishlistId }: { id?: string; wishlistId?: string }) {
   useEffect(() => {
     if (id) void load();
   }, [id]);
-
-  // Starting from a buyers' wishlist: fill in what they asked for.
-  const [wish, setWish] = useState<Wishlist | null>(null);
-  useEffect(() => {
-    if (!wishlistId) return;
-    void a.run(async () => {
-      const w = await api<Wishlist>(`/wishlists/${wishlistId}`);
-      setWish(w);
-      setName(w.title);
-      setStore(w.store);
-      setLocation(w.pickupLocation);
-      setCoords(PICKUP_PLACES.find((p) => p.name === w.pickupLocation) ?? null);
-      setItems(
-        w.items.map((i) => {
-          const c = CATALOG.find((x) => x.key === i.catalogKey);
-          return c
-            ? draftFromCatalog(c)
-            : { ...emptyDraft(), name: i.name, chosen: true };
-        }),
-      );
-    });
-  }, [wishlistId]);
 
   // Keep the dates in order: changing an earlier date pushes later ones along.
   const changeDeadline = (d: Date) => {
@@ -181,13 +148,7 @@ function DraftForm({ id, wishlistId }: { id?: string; wishlistId?: string }) {
       let oid = id;
       if (id)
         await api(`/orders/${id}`, { method: "PUT", body: JSON.stringify(b) });
-      else
-        oid = (
-          await post<{ id: string }>("/orders", {
-            ...b,
-            ...(wishlistId ? { wishlistId } : {}),
-          })
-        ).id;
+      else oid = (await post<{ id: string }>("/orders", b)).id;
       router.replace({
         pathname: "/(tabs)/order/[id]",
         params: { id: oid!, view: "organize" },
@@ -208,23 +169,18 @@ function DraftForm({ id, wishlistId }: { id?: string; wishlistId?: string }) {
     );
   return (
     <Screen
-      title={
-        id ? "Edit draft" : wishlistId ? "Organize a wishlist" : "New group"
-      }
+      title={id ? "Edit draft" : "New group"}
       subtitle={id ? undefined : "Save a draft, then publish when ready"}
       role="organizing"
       back
     >
-      {wish && (
-        <View
-          style={[styles.card, { backgroundColor: brand.yellowSoft, gap: 6 }]}
-        >
-          <Text style={styles.label}>From a buyers’ wishlist</Text>
+      {!id && (
+        <View style={[styles.note, { gap: 4 }]}>
+          <Text style={styles.label}>Before you start</Text>
           <Text style={styles.text}>
-            {wish.memberCount}{" "}
-            {wish.memberCount === 1 ? "person wants" : "people want"} “
-            {wish.title}”. Their items are filled in below. Check prices and
-            share sizes, then save. They’ll hear when you publish.
+            Groups are for trips you’re making anyway: you’ll add at least one
+            share for yourself after publishing, and you can start up to{" "}
+            {WEEKLY_RUN_LIMIT} groups a week.
           </Text>
         </View>
       )}

@@ -2,65 +2,40 @@ import { randomBytes } from "node:crypto";
 import { Router } from "express";
 import type { Pool } from "mysql2/promise";
 import { z } from "zod";
-import { feeFor, type Payment, type PayoutSummary } from "@poold/contracts";
-import { verified } from "./auth.js";
+import {
+  feeFor,
+  type Payment,
+  type PayoutSummary,
+  type Hold,
+  type SavedCard,
+} from "@poold/contracts";
+import { requireUser, verified } from "./auth.js";
 import { execute, first, rows, iso, transaction, type DB } from "./db.js";
-import { fail } from "./errors.js";
-import { getOrder } from "./order-model.js";
 import { notify } from "./notifications.js";
 import { id } from "./security.js";
-import type { MailSender } from "./mail.js";
 
 /**
- * Payments are a class demo: nobody is ever charged.
+ * Test-mode payments for the class demo. Nobody is ever charged.
  *
- * Buyers pay for their shares when they confirm them, so the organizer has the
- * money before going to the store. If shares are removed, an item turns out
- * unavailable, a price drops or the group is cancelled, the difference is
- * refunded automatically. If a price goes up, the buyer sees a small balance.
- *
- * - With STRIPE_SECRET_KEY set to a Stripe *test* key, buyers go through
- *   Stripe's hosted test checkout.
- * - Without a key, POOLD's own test checkout is used.
- * Live keys are refused so real money can't move by accident.
+ * How money moves (like a hotel or a gas pump):
+ * 1. Confirming shares saves a card. Nothing is charged, so buyers can change
+ *    their minds freely while the group is open.
+ * 2. When shares close, a hold is placed on each buyer's card for their shares
+ *    plus the 5% service fee. A declined card gets 2 hours to be fixed;
+ *    shopping can't start until every hold is authorized or the shares drop.
+ * 3. When the organizer starts shopping, the holds are charged and the item
+ *    money is released to them. Fees are released after hand-out.
+ * 4. Store price differences afterwards are refunded, or charged to the saved
+ *    card if a price went up.
+ * Organizers don't pay through the app: they pay for their own share at the
+ * store.
  */
-export function stripeKey(): string | null {
-  const key = process.env.STRIPE_SECRET_KEY?.trim();
-  if (!key) return null;
-  if (!/^(sk|rk)_test_/.test(key))
-    throw new Error(
-      "POOLD only supports Stripe test mode. Use a key that starts with sk_test_.",
-    );
-  return key;
-}
 
-async function stripe(
-  path: string,
-  init: { method?: string; form?: Record<string, string> } = {},
-) {
-  const r = await fetch(`https://api.stripe.com/v1/${path}`, {
-    method: init.method ?? "GET",
-    headers: {
-      Authorization: `Bearer ${stripeKey()}`,
-      ...(init.form
-        ? { "Content-Type": "application/x-www-form-urlencoded" }
-        : {}),
-    },
-    body: init.form ? new URLSearchParams(init.form).toString() : undefined,
-  });
-  const body = (await r.json()) as any;
-  if (!r.ok)
-    fail(
-      502,
-      "STRIPE",
-      body?.error?.message ?? "Stripe test checkout is unavailable.",
-    );
-  return body;
-}
-
+export const RETRY_MS = 2 * 3600000;
 const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+type O = { id: string; name: string; organizer_id: string };
 
-/** A member's current estimate, using the same rounding as the order view. */
+/** A member's share cost, using the same rounding as the order view. */
 export async function memberEstimate(c: DB, oid: string, uid: string) {
   const r = await first(
     c,
@@ -72,14 +47,15 @@ export async function memberEstimate(c: DB, oid: string, uid: string) {
   return Number(r.cents);
 }
 
-/** Shares plus the 5% service fee (organizers pay no fee on their own). */
+/** What a member pays through the app: shares + 5% fee. Organizers: 0. */
 export async function memberOwed(
   c: DB,
   o: { id: string; organizer_id: string },
   uid: string,
 ) {
+  if (uid === o.organizer_id) return 0;
   const shares = await memberEstimate(c, o.id, uid);
-  return shares + feeFor(shares, uid === o.organizer_id);
+  return shares + feeFor(shares);
 }
 
 export async function netPaid(c: DB, oid: string, uid: string) {
@@ -90,6 +66,10 @@ export async function netPaid(c: DB, oid: string, uid: string) {
     [oid, uid],
   );
   return Number(r.cents);
+}
+
+async function savedCard(c: DB, uid: string) {
+  return first(c, "SELECT * FROM payment_methods WHERE user_id=?", [uid]);
 }
 
 /** Payment summary for one member, shown to them and to the organizer. */
@@ -104,6 +84,7 @@ export async function ledger(
   dueCents: number;
   feeCents: number;
   payments: Payment[];
+  hold: Hold | null;
 }> {
   const fee = feeFor(estimateCents, organizer);
   const list = await rows(
@@ -115,10 +96,15 @@ export async function ledger(
     (n, p) => n + (p.kind === "payment" ? p.amount_cents : -p.amount_cents),
     0,
   );
+  const h = await first(
+    c,
+    "SELECT * FROM holds WHERE order_id=? AND user_id=?",
+    [oid, uid],
+  );
   return {
     paidCents: paid,
     feeCents: fee,
-    dueCents: Math.max(0, estimateCents + fee - paid),
+    dueCents: organizer ? 0 : Math.max(0, estimateCents + fee - paid),
     payments: list.map((p) => ({
       id: p.id,
       kind: p.kind,
@@ -129,227 +115,353 @@ export async function ledger(
       cardLast4: p.card_last4,
       note: p.note,
     })),
+    hold: h
+      ? {
+          status: h.status,
+          amountCents: h.amount_cents,
+          cardBrand: h.card_brand,
+          cardLast4: h.card_last4,
+          reason: h.reason,
+          retryUntil: h.retry_until ? iso(h.retry_until) : null,
+        }
+      : null,
   };
 }
 
 /**
- * Refund anything paid beyond what the member now owes (shares removed, item
- * unavailable, price drop, or the whole group cancelled). Test mode only.
+ * Place (or update) the hold for one buyer. A missing or declined card marks
+ * the hold failed with a 2-hour window to fix it.
  */
-export async function settle(
-  c: DB,
-  o: { id: string; name: string; organizer_id: string },
-  uid: string,
-  reason: string,
-  cancelled = false,
-) {
-  const owed = cancelled ? 0 : await memberOwed(c, o, uid);
-  const paid = await netPaid(c, o.id, uid);
-  if (paid <= owed) return;
-  const refund = paid - owed;
-  const last = await first(
+export async function authorize(c: DB, o: O, uid: string) {
+  if (uid === o.organizer_id) return "skip";
+  const amount = await memberOwed(c, o, uid);
+  const existing = await first(
     c,
-    "SELECT mode,card_brand,card_last4 FROM payments WHERE order_id=? AND user_id=? AND kind='payment' ORDER BY created_at DESC LIMIT 1",
+    "SELECT * FROM holds WHERE order_id=? AND user_id=? FOR UPDATE",
     [o.id, uid],
   );
-  await execute(
-    c,
-    "INSERT INTO payments(id,order_id,user_id,kind,amount_cents,mode,ref,card_brand,card_last4,note) VALUES(?,?,?,'refund',?,?,?,?,?,?)",
-    [
-      id(),
-      o.id,
-      uid,
-      refund,
-      last?.mode ?? "demo",
-      `re_test_${randomBytes(12).toString("hex")}`,
-      last?.card_brand ?? null,
-      last?.card_last4 ?? null,
-      reason.slice(0, 160),
-    ],
-  );
-  await notify(
-    c,
-    uid,
-    o.id,
-    `${o.name}: ${dollars(refund)} refunded to your card (${reason}). Test mode, no real money.`,
-    `refund:${id()}`,
-  );
-}
-
-/** Settle every member, e.g. after a price change or a cancellation. */
-export async function settleAll(
-  c: DB,
-  o: { id: string; name: string; organizer_id: string },
-  reason: string,
-  cancelled = false,
-) {
-  for (const m of await rows(
-    c,
-    "SELECT DISTINCT user_id FROM payments WHERE order_id=?",
-    [o.id],
-  ))
-    await settle(c, o, m.user_id, reason, cancelled);
-}
-
-/** What this member still owes right now. */
-async function amountDue(db: DB, orderId: string, uid: string) {
-  const o = await getOrder(db, orderId, uid);
-  if (["draft", "cancelled"].includes(o.status))
-    fail(409, "NOT_PAYABLE", "This group isn’t taking payments.");
-  const cents = (await memberOwed(db, o, uid)) - (await netPaid(db, o.id, uid));
-  if (cents <= 0) fail(409, "NOTHING_TO_PAY", "You’re all paid up.");
-  return { o, cents };
-}
-
-async function recordPayment(
-  db: Pool,
-  sendMail: MailSender,
-  o: any,
-  user: { id: string; name: string; email: string },
-  cents: number,
-  mode: "stripe_test" | "demo",
-  ref: string,
-  card: { brand: string | null; last4: string | null },
-) {
-  const created = await transaction(db, async (c) => {
-    // A Stripe session or demo reference is only ever counted once.
-    if (await first(c, "SELECT id FROM payments WHERE ref=?", [ref]))
-      return false;
+  if (existing?.status === "captured") return "captured";
+  if (amount <= 0) {
+    if (existing)
+      await execute(
+        c,
+        "UPDATE holds SET status='released',amount_cents=0 WHERE order_id=? AND user_id=?",
+        [o.id, uid],
+      );
+    return "released";
+  }
+  const card = await savedCard(c, uid);
+  if (card?.outcome === "ok") {
     await execute(
       c,
-      "INSERT INTO payments(id,order_id,user_id,kind,amount_cents,mode,ref,card_brand,card_last4) VALUES(?,?,?,'payment',?,?,?,?,?)",
-      [id(), o.id, user.id, cents, mode, ref, card.brand, card.last4],
+      `INSERT INTO holds(order_id,user_id,amount_cents,status,card_brand,card_last4,reason,retry_until)
+       VALUES(?,?,?,'authorized',?,?,NULL,NULL)
+       ON DUPLICATE KEY UPDATE amount_cents=VALUES(amount_cents),status='authorized',card_brand=VALUES(card_brand),card_last4=VALUES(card_last4),reason=NULL,retry_until=NULL`,
+      [o.id, uid, amount, card.brand, card.last4],
+    );
+    if (existing?.status === "failed")
+      await notify(
+        c,
+        o.organizer_id,
+        o.id,
+        `${o.name}: a buyer fixed their card. Their ${dollars(amount)} is authorized.`,
+        `hold-fixed:${o.id}:${uid}:${id()}`,
+      );
+    return "authorized";
+  }
+  const reason = !card
+    ? "No card saved"
+    : card.outcome === "funds"
+      ? "Insufficient funds"
+      : "Card declined";
+  const until =
+    existing?.status === "failed" && existing.retry_until
+      ? new Date(existing.retry_until)
+      : new Date(Date.now() + RETRY_MS);
+  await execute(
+    c,
+    `INSERT INTO holds(order_id,user_id,amount_cents,status,card_brand,card_last4,reason,retry_until)
+     VALUES(?,?,?,'failed',?,?,?,?)
+     ON DUPLICATE KEY UPDATE amount_cents=VALUES(amount_cents),status='failed',card_brand=VALUES(card_brand),card_last4=VALUES(card_last4),reason=VALUES(reason),retry_until=VALUES(retry_until)`,
+    [
+      o.id,
+      uid,
+      amount,
+      card?.brand ?? null,
+      card?.last4 ?? null,
+      reason,
+      until,
+    ],
+  );
+  if (existing?.status !== "failed")
+    await notify(
+      c,
+      uid,
+      o.id,
+      `${o.name}: we couldn’t hold ${dollars(amount)} on your card (${reason.toLowerCase()}). Update your card within 2 hours or your shares will be released.`,
+      `hold-failed:${o.id}:${uid}:${id()}`,
+    );
+  return "failed";
+}
+
+/** When shares close: hold every buyer's shares + fee on their saved card. */
+export async function placeHolds(c: DB, o: O) {
+  const buyers = await rows(
+    c,
+    "SELECT DISTINCT s.user_id FROM share_claims s JOIN order_items i ON i.id=s.item_id WHERE i.order_id=? AND s.user_id<>?",
+    [o.id, o.organizer_id],
+  );
+  for (const b of buyers) await authorize(c, o, b.user_id);
+}
+
+/** Buyers whose card is still declined after the 2-hour window lose their shares. */
+export async function dropFailedHolds(c: DB, o: O, now = new Date()) {
+  const expired = await rows(
+    c,
+    "SELECT user_id FROM holds WHERE order_id=? AND status='failed' AND retry_until<=?",
+    [o.id, now],
+  );
+  for (const h of expired) {
+    await execute(
+      c,
+      "DELETE s FROM share_claims s JOIN order_items i ON i.id=s.item_id WHERE i.order_id=? AND s.user_id=?",
+      [o.id, h.user_id],
+    );
+    await execute(c, "DELETE FROM memberships WHERE order_id=? AND user_id=?", [
+      o.id,
+      h.user_id,
+    ]);
+    await execute(
+      c,
+      "UPDATE holds SET status='released',amount_cents=0 WHERE order_id=? AND user_id=?",
+      [o.id, h.user_id],
+    );
+    await notify(
+      c,
+      h.user_id,
+      o.id,
+      `${o.name}: your card wasn’t updated in time, so your shares were released. Nothing was charged.`,
+      `hold-drop:${o.id}:${h.user_id}`,
     );
     await notify(
       c,
       o.organizer_id,
       o.id,
-      `${o.name}: ${user.name} paid ${dollars(cents)} for their shares (test payment).`,
-      `paid:${ref}`,
+      `${o.name}: a buyer’s card was still declined after 2 hours, so their shares were released. Check the shopping list.`,
+      `hold-drop-org:${o.id}:${h.user_id}`,
     );
-    return true;
-  });
-  if (!created) return;
-  try {
-    await sendMail({
-      to: user.email,
-      subject: `Your POOLD receipt: ${dollars(cents)} for ${o.name}`,
-      text: [
-        `Thanks, ${user.name.split(" ")[0]}!`,
-        "",
-        `You paid ${dollars(cents)} for your shares in ${o.name}.`,
-        card.last4
-          ? `Card: ${card.brand ?? "Card"} ending in ${card.last4}`
-          : "",
-        `Receipt no.: ${ref
-          .replace(/^(pi|cs)_test_/, "")
-          .slice(0, 12)
-          .toUpperCase()}`,
-        "",
-        "This was a TEST payment for a class demo. No real money was charged.",
-        "If shares change or an item isn't available, the difference is refunded automatically.",
-      ]
-        .filter((line) => line !== null)
-        .join("\n"),
-    });
-  } catch {
-    // The payment stands even if the receipt email can't be sent.
+  }
+  return expired.length;
+}
+
+/** Holds still waiting on a buyer to fix their card. */
+export async function failedHolds(c: DB, oid: string) {
+  return rows(
+    c,
+    "SELECT user_id,retry_until FROM holds WHERE order_id=? AND status='failed' ORDER BY retry_until",
+    [oid],
+  );
+}
+
+async function charge(
+  c: DB,
+  o: O,
+  uid: string,
+  cents: number,
+  card: { brand: string | null; last4: string | null },
+  note: string | null,
+) {
+  await execute(
+    c,
+    "INSERT INTO payments(id,order_id,user_id,kind,amount_cents,mode,ref,card_brand,card_last4,note) VALUES(?,?,?,'payment',?,'demo',?,?,?,?)",
+    [
+      id(),
+      o.id,
+      uid,
+      cents,
+      `pi_test_${randomBytes(12).toString("hex")}`,
+      card.brand,
+      card.last4,
+      note,
+    ],
+  );
+}
+
+/** Shopping starts: charge every authorized hold. */
+export async function captureHolds(c: DB, o: O) {
+  const holds = await rows(
+    c,
+    "SELECT * FROM holds WHERE order_id=? AND status='authorized' FOR UPDATE",
+    [o.id],
+  );
+  for (const h of holds) {
+    await charge(
+      c,
+      o,
+      h.user_id,
+      h.amount_cents,
+      { brand: h.card_brand, last4: h.card_last4 },
+      null,
+    );
+    await execute(
+      c,
+      "UPDATE holds SET status='captured' WHERE order_id=? AND user_id=?",
+      [o.id, h.user_id],
+    );
+    await notify(
+      c,
+      h.user_id,
+      o.id,
+      `${o.name}: shopping started, so ${dollars(h.amount_cents)} was charged to your ${h.card_brand ?? "card"} •••• ${h.card_last4 ?? ""} (test).`,
+      `captured:${o.id}:${h.user_id}`,
+    );
   }
 }
 
-export function payments(db: Pool, appUrl: string, sendMail: MailSender) {
+/**
+ * Keep a buyer's money in line with what they owe:
+ * - before shopping, update the hold (no charge);
+ * - after shopping started, refund overpayments or charge price increases
+ *   to the saved card;
+ * - cancelled: release the hold and refund anything charged.
+ */
+export async function settle(
+  c: DB,
+  o: O & { status?: string },
+  uid: string,
+  reason: string,
+  cancelled = false,
+) {
+  if (uid === o.organizer_id) return;
+  const hold = await first(
+    c,
+    "SELECT * FROM holds WHERE order_id=? AND user_id=?",
+    [o.id, uid],
+  );
+  if (cancelled && hold && hold.status !== "captured")
+    await execute(
+      c,
+      "UPDATE holds SET status='released' WHERE order_id=? AND user_id=?",
+      [o.id, uid],
+    );
+  if (!cancelled && hold && ["authorized", "failed"].includes(hold.status)) {
+    await authorize(c, o, uid);
+    return;
+  }
+  const owed = cancelled ? 0 : await memberOwed(c, o, uid);
+  const paid = await netPaid(c, o.id, uid);
+  if (paid > owed) {
+    const refund = paid - owed;
+    const last = await first(
+      c,
+      "SELECT card_brand,card_last4 FROM payments WHERE order_id=? AND user_id=? AND kind='payment' ORDER BY created_at DESC LIMIT 1",
+      [o.id, uid],
+    );
+    await execute(
+      c,
+      "INSERT INTO payments(id,order_id,user_id,kind,amount_cents,mode,ref,card_brand,card_last4,note) VALUES(?,?,?,'refund',?,'demo',?,?,?,?)",
+      [
+        id(),
+        o.id,
+        uid,
+        refund,
+        `re_test_${randomBytes(12).toString("hex")}`,
+        last?.card_brand ?? null,
+        last?.card_last4 ?? null,
+        reason.slice(0, 160),
+      ],
+    );
+    await notify(
+      c,
+      uid,
+      o.id,
+      `${o.name}: ${dollars(refund)} refunded to your card (${reason}). Test mode, no real money.`,
+      `refund:${id()}`,
+    );
+  } else if (owed > paid && hold?.status === "captured") {
+    const card = await savedCard(c, uid);
+    const extra = owed - paid;
+    if (card?.outcome === "ok") {
+      await charge(c, o, uid, extra, card, reason.slice(0, 160));
+      await notify(
+        c,
+        uid,
+        o.id,
+        `${o.name}: ${dollars(extra)} more was charged to your card (${reason}). Test mode.`,
+        `extra:${id()}`,
+      );
+    } else
+      await notify(
+        c,
+        uid,
+        o.id,
+        `${o.name}: you owe ${dollars(extra)} more (${reason}), but your card was declined. Update it in the group.`,
+        `extra-failed:${id()}`,
+      );
+  }
+}
+
+/** Settle every buyer, e.g. after a price change or a cancellation. */
+export async function settleAll(
+  c: DB,
+  o: O & { status?: string },
+  reason: string,
+  cancelled = false,
+) {
+  for (const m of await rows(
+    c,
+    "SELECT user_id FROM holds WHERE order_id=? UNION SELECT user_id FROM payments WHERE order_id=?",
+    [o.id, o.id],
+  ))
+    await settle(c, o, m.user_id, reason, cancelled);
+}
+
+export function payments(db: Pool) {
   const r = Router();
-  r.post("/orders/:id/pay", verified, async (req, res) => {
-    const { o, cents } = await amountDue(
-      db,
-      req.params.id as string,
-      req.user!.id,
-    );
-    if (!stripeKey()) {
-      res.json({ mode: "demo", amountCents: cents });
-      return;
-    }
-    // Send buyers back to the address they paid from (laptop, Wi-Fi or tunnel
-    // link). The API's origin check has already approved this address.
-    const from = req.get("origin") ?? appUrl;
-    const back = `${from.replace(/\/$/, "")}/order/${o.id}`;
-    const session = await stripe("checkout/sessions", {
-      method: "POST",
-      form: {
-        mode: "payment",
-        customer_email: req.user!.email,
-        success_url: `${back}?paid={CHECKOUT_SESSION_ID}`,
-        cancel_url: back,
-        "line_items[0][quantity]": "1",
-        "line_items[0][price_data][currency]": "cad",
-        "line_items[0][price_data][unit_amount]": String(cents),
-        "line_items[0][price_data][product_data][name]": `Your shares in ${o.name}`,
-        "metadata[order_id]": o.id,
-        "metadata[user_id]": req.user!.id,
-        "metadata[amount_cents]": String(cents),
-        client_reference_id: `${o.id}:${req.user!.id}`,
-      },
-    });
-    res.json({ mode: "stripe_test", amountCents: cents, url: session.url });
+  // The saved test card. Only the brand, last four digits and what the test
+  // card number simulates are stored; the number never leaves the device.
+  r.get("/payment-method", requireUser, async (req, res) => {
+    const card = await savedCard(db, req.user!.id);
+    const out: SavedCard | null = card
+      ? { brand: card.brand, last4: card.last4 }
+      : null;
+    res.json(out);
   });
-  // Called when Stripe sends the buyer back. We ask Stripe directly whether the
-  // session was paid, so this works on a laptop without webhooks.
-  r.post("/orders/:id/pay/confirm", verified, async (req, res) => {
-    const sessionId = z
-      .string()
-      .regex(/^cs_test_[A-Za-z0-9_]+$/)
-      .parse(req.body.sessionId);
-    if (!stripeKey())
-      fail(409, "NO_STRIPE", "Stripe isn’t set up on this server.");
-    const o = await getOrder(db, req.params.id as string, req.user!.id);
-    const s = await stripe(`checkout/sessions/${sessionId}`);
-    if (
-      s.payment_status !== "paid" ||
-      s.livemode ||
-      s.metadata?.order_id !== o.id ||
-      s.metadata?.user_id !== req.user!.id
-    )
-      fail(409, "NOT_PAID", "Stripe hasn’t confirmed this payment.");
-    await recordPayment(
-      db,
-      sendMail,
-      o,
-      req.user!,
-      Number(s.amount_total),
-      "stripe_test",
-      sessionId,
-      { brand: null, last4: null },
-    );
-    res.json({ ok: true });
-  });
-  // POOLD's own test checkout. Only the card brand and last four digits are
-  // sent, for the receipt; the app accepts published test card numbers only.
-  r.post("/orders/:id/pay/demo", verified, async (req, res) => {
-    if (stripeKey())
-      fail(409, "USE_STRIPE", "Use Stripe test checkout instead.");
-    const card = z
+  r.put("/payment-method", verified, async (req, res) => {
+    const b = z
       .object({
-        brand: z.enum(["Visa", "Mastercard", "Amex"]).nullable().default(null),
-        last4: z
-          .string()
-          .regex(/^\d{4}$/)
-          .nullable()
-          .default(null),
+        brand: z.enum(["Visa", "Mastercard", "Amex"]),
+        last4: z.string().regex(/^\d{4}$/),
+        outcome: z.enum(["ok", "declined", "funds"]).default("ok"),
       })
-      .parse(req.body ?? {});
-    const { o, cents } = await amountDue(
-      db,
-      req.params.id as string,
-      req.user!.id,
-    );
-    const ref = `pi_test_${randomBytes(12).toString("hex")}`;
-    await recordPayment(db, sendMail, o, req.user!, cents, "demo", ref, card);
-    res.json({ ok: true, ref, amountCents: cents });
+      .parse(req.body);
+    await transaction(db, async (c) => {
+      await execute(
+        c,
+        "INSERT INTO payment_methods(user_id,brand,last4,outcome) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE brand=VALUES(brand),last4=VALUES(last4),outcome=VALUES(outcome)",
+        [req.user!.id, b.brand, b.last4, b.outcome],
+      );
+      // A new card retries any holds that were declined.
+      for (const h of await rows(
+        c,
+        "SELECT o.* FROM holds h JOIN orders o ON o.id=h.order_id WHERE h.user_id=? AND h.status='failed' AND o.status='locked'",
+        [req.user!.id],
+      ))
+        await authorize(c, h, req.user!.id);
+      // And any balance from a price increase after shopping.
+      for (const o of await rows(
+        c,
+        "SELECT o.* FROM holds h JOIN orders o ON o.id=h.order_id WHERE h.user_id=? AND h.status='captured' AND o.status IN ('shopping','ready')",
+        [req.user!.id],
+      ))
+        await settle(c, o, req.user!.id, "a price went up");
+    });
+    res.json({ ok: true });
   });
   return r;
 }
 
-/** Everything members have paid in, minus refunds. */
+/** Everything buyers have paid in, minus refunds. */
 async function orderNet(c: DB, oid: string) {
   const r = await first(
     c,
@@ -359,18 +471,12 @@ async function orderNet(c: DB, oid: string) {
   return Number(r.cents);
 }
 
-/**
- * When shopping starts, the organizer gets the money for the items only.
- * The service fees stay held until every bag is handed out.
- */
-export async function releaseShoppingMoney(
-  c: DB,
-  o: { id: string; name: string; organizer_id: string },
-) {
+/** When shopping starts, the organizer gets the item money; fees stay held. */
+export async function releaseShoppingMoney(c: DB, o: O) {
   const members = await rows(
     c,
-    "SELECT user_id FROM memberships WHERE order_id=?",
-    [o.id],
+    "SELECT user_id FROM memberships WHERE order_id=? AND user_id<>?",
+    [o.id, o.organizer_id],
   );
   let cents = 0;
   for (const m of members) {
@@ -393,10 +499,7 @@ export async function releaseShoppingMoney(
 }
 
 /** After hand-out: release everything still held (the fees and any balance). */
-export async function releaseRemaining(
-  c: DB,
-  o: { id: string; name: string; organizer_id: string },
-) {
+export async function releaseRemaining(c: DB, o: O) {
   const released = await first(
     c,
     "SELECT COALESCE(SUM(amount_cents),0) AS cents FROM payouts WHERE order_id=?",
@@ -427,9 +530,15 @@ export async function payoutSummary(
     "SELECT kind,amount_cents,created_at FROM payouts WHERE order_id=? ORDER BY created_at",
     [oid],
   );
+  const held = await first(
+    c,
+    "SELECT COALESCE(SUM(amount_cents),0) AS cents FROM holds WHERE order_id=? AND status='authorized'",
+    [oid],
+  );
   const collected = await orderNet(c, oid);
   const released = list.reduce((n, p) => n + p.amount_cents, 0);
   return {
+    authorizedCents: Number(held.cents),
     collectedCents: collected,
     releasedCents: released,
     heldCents: Math.max(0, collected - released),
@@ -439,40 +548,4 @@ export async function payoutSummary(
       createdAt: iso(p.created_at),
     })),
   };
-}
-
-/**
- * When shares close, anyone who hasn't paid anything loses their shares, so
- * the organizer only buys what's paid for.
- */
-export async function dropUnpaid(
-  c: DB,
-  o: { id: string; name: string; organizer_id: string },
-) {
-  const members = await rows(
-    c,
-    "SELECT DISTINCT s.user_id FROM share_claims s JOIN order_items i ON i.id=s.item_id WHERE i.order_id=?",
-    [o.id],
-  );
-  for (const m of members) {
-    if ((await netPaid(c, o.id, m.user_id)) > 0) continue;
-    await execute(
-      c,
-      "DELETE s FROM share_claims s JOIN order_items i ON i.id=s.item_id WHERE i.order_id=? AND s.user_id=?",
-      [o.id, m.user_id],
-    );
-    if (m.user_id !== o.organizer_id)
-      await execute(
-        c,
-        "DELETE FROM memberships WHERE order_id=? AND user_id=?",
-        [o.id, m.user_id],
-      );
-    await notify(
-      c,
-      m.user_id,
-      o.id,
-      `${o.name}: shares closed before you paid, so your shares were released. Nothing was charged.`,
-      `unpaid-drop:${o.id}:${m.user_id}`,
-    );
-  }
 }

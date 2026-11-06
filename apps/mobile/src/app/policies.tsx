@@ -18,23 +18,33 @@ const SECTIONS: Section[] = [
     points: ["POOLD is for UVic students. You need a verified @uvic.ca email."],
   },
   {
+    icon: "storefront-outline",
+    title: "Who organizes",
+    points: [
+      "Organizers split a trip they’re making anyway. They must take at least one share themselves.",
+      "Each organizer can start up to 2 groups a week.",
+      "Organizers pay for their own share at the store, so they don’t pay anything in the app.",
+      "If nobody else joins by the deadline, the group is cancelled automatically. Nothing is charged.",
+    ],
+  },
+  {
     icon: "card-outline",
     title: "Paying for your shares",
     points: [
-      "You pay when you confirm your shares, before the organizer shops.",
-      "Buyers add a 5% service fee for the organizer. Organizers pay for their own shares too, with no fee.",
-      "POOLD holds the money. The cost of the items is released to the organizer when they start shopping.",
-      "The service fees are released only after every bag is handed out.",
-      "If you haven’t paid when shares close, your shares are dropped and nothing is charged.",
+      "You save a card when you join. Nothing is charged while the group is open, so you can change or drop your shares for free.",
+      "When shares close, a hold is placed on your card for your shares plus a 5% service fee for the organizer.",
+      "If your card is declined, you have 2 hours to update it. Shopping can’t start until every card is sorted; after 2 hours, unpaid shares are released.",
+      "When the organizer starts shopping, the hold is charged. POOLD releases the item money to the organizer then, and the service fees after every bag is handed out.",
     ],
   },
   {
     icon: "arrow-undo-outline",
-    title: "Refunds",
+    title: "If prices change",
     points: [
-      "Remove shares before they close and the difference comes back to your card.",
-      "If an item is unavailable or cheaper at the store, you’re refunded the difference.",
-      "If a group is cancelled, everyone gets a full refund.",
+      "Before shopping, a price change just updates your hold.",
+      "If an item is cheaper or unavailable at the store, you’re refunded the difference.",
+      "If a price is higher, the small difference is charged to your saved card.",
+      "If a group is cancelled, holds are released and anything charged is refunded in full.",
     ],
   },
   {

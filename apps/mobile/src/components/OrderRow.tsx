@@ -22,13 +22,28 @@ export function OrderRow({
   showStatus = false,
   organize = false,
   byYou = false,
+  join = false,
 }: {
   order: OrderSummary;
   showStatus?: boolean;
   organize?: boolean;
   /** Buyer view of a group you organize and also take shares in. */
   byYou?: boolean;
+  /** Show a clear "Join group" button (buyer Home). */
+  join?: boolean;
 }) {
+  const open = () =>
+    router.push({
+      pathname: "/(tabs)/order/[id]",
+      params: { id: o.id, ...(organize ? { view: "organize" } : {}) },
+    });
+  // Look at the list without picking anything.
+  const browse = () =>
+    router.push({
+      pathname: "/(tabs)/order/[id]",
+      params: { id: o.id, view: "browse" },
+    });
+  const full = o.memberCount >= o.maxMembers && !o.joined;
   const items =
     o.previewItems ??
     o.preview
@@ -72,29 +87,21 @@ export function OrderRow({
             ? "organizer"
             : "buyer";
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`Open ${o.name}`}
-      onPress={() =>
-        router.push({
-          pathname: "/(tabs)/order/[id]",
-          params: { id: o.id, ...(organize ? { view: "organize" } : {}) },
-        })
-      }
-      style={({ pressed }) => ({
+    <View
+      style={{
         marginBottom: 12,
-        opacity: pressed ? 0.8 : 1,
-        transform: [{ scale: pressed ? 0.99 : 1 }],
-      })}
+        backgroundColor: P.paper,
+        borderRadius: 20,
+        padding: 16,
+        gap: 12,
+        ...shadow,
+      }}
     >
-      <View
-        style={{
-          backgroundColor: P.paper,
-          borderRadius: 20,
-          padding: 16,
-          gap: 12,
-          ...shadow,
-        }}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${o.name}`}
+        onPress={open}
+        style={({ pressed }) => ({ gap: 12, opacity: pressed ? 0.75 : 1 })}
       >
         <View style={[styles.between, { alignItems: "center" }]}>
           <View style={[styles.row, { gap: 10, flex: 1 }]}>
@@ -168,7 +175,82 @@ export function OrderRow({
           <Meta icon="time-outline">{day(o.pickupAt)}</Meta>
           <Meta icon="location-outline">{o.pickupLocation}</Meta>
         </View>
-      </View>
+      </Pressable>
+      {join && o.status === "open" && (
+        <View style={{ gap: 8 }}>
+          {o.joined || full ? (
+            <CardButton
+              label={full ? "View list" : "View my shares"}
+              icon={full ? "list-outline" : "bag-check-outline"}
+              a11y={full ? `View what's in ${o.name}` : `View your shares in ${o.name}`}
+              onPress={full ? browse : open}
+            />
+          ) : (
+            <>
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <CardButton
+                  label="View list"
+                  icon="list-outline"
+                  a11y={`View what's in ${o.name}`}
+                  onPress={browse}
+                />
+                <CardButton
+                  primary
+                  label="Join group"
+                  icon="add-circle-outline"
+                  a11y={`Join ${o.name}`}
+                  onPress={open}
+                />
+              </View>
+              <Text
+                style={[type.mono, { fontSize: 12, textAlign: "center" }]}
+              >
+                Free to join · nothing is charged until shares close
+              </Text>
+            </>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function CardButton({
+  label,
+  icon,
+  a11y,
+  onPress,
+  primary = false,
+}: {
+  label: string;
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  a11y: string;
+  onPress: () => void;
+  primary?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={a11y}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flex: 1,
+        minHeight: 46,
+        borderRadius: 999,
+        flexDirection: "row",
+        gap: 8,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: primary ? P.carrot : P.paper,
+        borderWidth: primary ? 0 : 1.5,
+        borderColor: P.line,
+        opacity: pressed ? 0.85 : 1,
+      })}
+    >
+      <Ionicons name={icon} size={19} color={primary ? P.white : P.ink} />
+      <Text style={[type.label, { color: primary ? P.white : P.ink }]}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
