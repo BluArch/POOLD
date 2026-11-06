@@ -142,7 +142,6 @@ export async function seed(db: Pool) {
         },
         `demo-${who}`,
       );
-      // Samples don't count toward the weekly limit (no published_at).
       await execute(c, "UPDATE orders SET status='open' WHERE id=?", [oid]);
       // Organizers always take a share of their own run.
       await execute(

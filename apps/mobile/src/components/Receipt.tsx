@@ -1,18 +1,23 @@
 import React from "react";
 import { View, Text } from "react-native";
-import { type Item, money, describeShare } from "@poold/contracts";
+import {
+  type Item,
+  money,
+  describeShare,
+  shareCost,
+  withMarkup,
+} from "@poold/contracts";
 import { palette as P, type, shadow } from "../theme";
 import { styles } from "./ui";
 import { ItemIcon } from "./ItemIcon";
 import { QuantityStepper } from "./Sections";
 import { ShareBar, Badge } from "./Market";
-export const estimateFor = (i: Item, quantity: number) =>
-  i.available
-    ? Math.floor(
-        (i.priceCents * quantity + Math.floor(i.sharesPerPack / 2)) /
-          i.sharesPerPack,
-      )
-    : 0;
+/** Buyers pay Costco's price + 15%; the organizer pays Costco's at the store. */
+export const estimateFor = (i: Item, quantity: number, organizer = false) => {
+  if (!i.available) return 0;
+  const cost = shareCost(i.priceCents, quantity, i.sharesPerPack);
+  return organizer ? cost : withMarkup(cost);
+};
 export function ReceiptLine({
   name,
   category,

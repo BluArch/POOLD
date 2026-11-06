@@ -6,7 +6,6 @@ import {
   type OrderInput,
   type OrderView,
   PICKUP_PLACES,
-  WEEKLY_RUN_LIMIT,
 } from "@poold/contracts";
 import { api, post } from "../../api";
 import {
@@ -179,8 +178,7 @@ function DraftForm({ id }: { id?: string }) {
           <Text style={styles.label}>Before you start</Text>
           <Text style={styles.text}>
             Groups are for trips you’re making anyway: you’ll add at least one
-            share for yourself after publishing, and you can start up to{" "}
-            {WEEKLY_RUN_LIMIT} groups a week.
+            share for yourself after publishing.
           </Text>
         </View>
       )}

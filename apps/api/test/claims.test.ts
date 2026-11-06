@@ -23,7 +23,8 @@ test("Phase C: concurrent last-share claims, edits, rollback, costs and deadline
     const winner = rs[0].status === 200 ? t.jordan : t.alex;
     const v = (await call(`/orders/${id}`, "GET", undefined, winner)).body;
     assert.equal(v.items[0].remaining, 0);
-    assert.equal(v.myEstimateCents, 1001);
+    // $10.01 at Costco + 15% markup.
+    assert.equal(v.myEstimateCents, 1151);
     assert.deepEqual(v.members, []);
     assert.equal(
       (await call(`/orders/${id}/claims`, "PUT", body(6), winner)).status,
@@ -63,7 +64,7 @@ test("Phase C: concurrent last-share claims, edits, rollback, costs and deadline
     assert.equal(
       (await call(`/orders/${id}`, "GET", undefined, winner)).body
         .myEstimateCents,
-      400,
+      460,
     );
     assert.equal(
       (

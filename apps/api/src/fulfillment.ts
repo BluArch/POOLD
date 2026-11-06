@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { randomBytes } from "node:crypto";
+import { randomInt } from "node:crypto";
 import type { Pool } from "mysql2/promise";
 import { z } from "zod";
 import { rateLimit } from "express-rate-limit";
@@ -50,10 +50,10 @@ export function fulfillment(db: Pool) {
         ]);
       } else if (next[o.status] !== status)
         fail(409, "INVALID_TRANSITION", "Follow the order steps in sequence.");
-      // Closing shares: the organizer must be buying too, there must be
-      // buyers to split with, and then each buyer's card gets a hold.
+      // Closing shares: the organizer must be buying too, then each buyer's
+      // card gets a hold. The organizer can close even if nobody else joined.
       if (status === "locked") {
-        const problem = await closeProblem(c, o);
+        const problem = await closeProblem(c, o, { needBuyers: false });
         if (problem) fail(409, problem.code, problem.message);
       }
       // Shopping can't start while any buyer still has a declined card.
@@ -124,6 +124,9 @@ export function fulfillment(db: Pool) {
             "UPDATE memberships SET packed=TRUE WHERE order_id=? AND user_id=?",
             [o.id, m.user_id],
           );
+        // Six-digit pickup codes, unique within the group (the rate limit on
+        // /collect keeps guessing impractical).
+        const used = new Set<string>();
         for (const m of members) {
           // The organizer already has their own items; no code needed.
           if (m.user_id === o.organizer_id) {
@@ -134,7 +137,10 @@ export function fulfillment(db: Pool) {
             );
             continue;
           }
-          const code = randomBytes(10).toString("hex").toUpperCase();
+          let code: string;
+          do code = String(randomInt(0, 1000000)).padStart(6, "0");
+          while (used.has(code));
+          used.add(code);
           await execute(
             c,
             "INSERT INTO collection_tokens(order_id,user_id,token_hash,code) VALUES(?,?,?,?)",
@@ -356,11 +362,11 @@ export function fulfillment(db: Pool) {
       const code = z
         .string()
         .trim()
-        .min(10)
-        .max(40)
+        .max(20)
         .parse(req.body.code)
-        .replace(/[\s-]/g, "")
-        .toUpperCase();
+        .replace(/[\s-]/g, "");
+      if (!/^\d{6}$/.test(code))
+        fail(400, "INVALID_COLLECTION", "Pickup codes are 6 digits.");
       // Optional: the member whose card the organizer typed the code into.
       const forUser = z
         .string()
@@ -617,6 +623,7 @@ export async function markNoShow(
 export async function closeProblem(
   c: DB,
   o: { id: string; organizer_id: string },
+  { needBuyers = true } = {},
 ) {
   const mine = await first(
     c,
@@ -629,6 +636,7 @@ export async function closeProblem(
       message:
         "Add your own shares first. Organizers split runs they’re shopping for anyway.",
     };
+  if (!needBuyers) return null;
   const others = await first(
     c,
     "SELECT COUNT(DISTINCT s.user_id) AS n FROM share_claims s JOIN order_items i ON i.id=s.item_id WHERE i.order_id=? AND s.user_id<>? AND i.available=TRUE",

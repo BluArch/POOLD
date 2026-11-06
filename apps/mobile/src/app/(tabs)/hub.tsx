@@ -2,7 +2,7 @@ import React from "react";
 import { Text, View, Pressable } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { type OrderSummary, WEEKLY_RUN_LIMIT } from "@poold/contracts";
+import { type OrderSummary } from "@poold/contracts";
 import {
   Screen,
   Button,
@@ -21,7 +21,7 @@ const TIPS: {
   {
     icon: "cart-outline",
     title: "Plan a run you’re doing anyway",
-    text: "Pick a store, sealed bulk packs and a pickup spot. Up to 2 groups a week.",
+    text: "Pick a store, sealed bulk packs and a pickup spot.",
   },
   {
     icon: "person-add-outline",
@@ -36,12 +36,12 @@ const TIPS: {
   {
     icon: "receipt-outline",
     title: "Shop and upload proof",
-    text: "Starting shopping charges the holds and releases the item money to you. Upload the receipt and a photo.",
+    text: "Starting shopping charges the holds and pays you the Costco cost of buyers’ shares. Upload the receipt and a photo.",
   },
   {
     icon: "bag-handle-outline",
-    title: "Hand out and get your fee",
-    text: "Check each pickup code. The 5% service fees are released when every bag is handed out.",
+    title: "Hand out and get your reward",
+    text: "Check each pickup code. Once every bag is handed out you earn $30, or 10% of buyers’ groceries if that’s more.",
   },
 ];
 
@@ -57,15 +57,6 @@ export default function Hub() {
   const count = (st: string[]) =>
     all.filter((o) => st.includes(o.status)).length;
   const urgent = all.filter(needsYou).length;
-  // Groups published in the last 7 days count toward the weekly limit.
-  const week = all.filter(
-    (o) =>
-      o.status !== "draft" &&
-      o.status !== "cancelled" &&
-      !!o.publishedAt &&
-      Date.now() - Date.parse(o.publishedAt) < 7 * 86400000,
-  ).length;
-  const runsLeft = Math.max(0, WEEKLY_RUN_LIMIT - week);
   return (
     <Screen
       title={`Hi, ${s.user?.name.split(" ")[0] ?? "there"}`}
@@ -117,18 +108,9 @@ export default function Hub() {
           <Stat value={count(["draft"])} label="Drafts" />
         </View>
       </Pressable>
-      <Button
-        icon="add"
-        disabled={runsLeft <= 0}
-        onPress={() => router.navigate("/(tabs)/create")}
-      >
-        {runsLeft > 0 ? "Start a group" : "Weekly limit reached"}
+      <Button icon="add" onPress={() => router.navigate("/(tabs)/create")}>
+        Start a group
       </Button>
-      <Text style={[type.mono, { textAlign: "center", marginTop: -6 }]}>
-        {runsLeft > 0
-          ? `${runsLeft} of ${WEEKLY_RUN_LIMIT} groups left this week`
-          : "You can start another group 7 days after your last one."}
-      </Text>
 
       <View style={[styles.card, { gap: 12 }]}>
         <Text style={styles.h2} accessibilityRole="header">

@@ -128,10 +128,36 @@ export const isUvicEmail = (email: string) =>
 
 /** Buyers pay a 5% service fee to the organizer; organizers pay nothing in the app. */
 export const FEE_RATE = 0.05;
-/** An organizer can publish this many groups in any 7 days. */
-export const WEEKLY_RUN_LIMIT = 2;
 export const feeFor = (sharesCents: number, organizer = false) =>
   organizer ? 0 : Math.round(sharesCents * FEE_RATE);
+
+/*
+ * POOLD's money model:
+ * - Buyers pay the Costco price + 15% markup, then a 5% service fee on that
+ *   total (the fee covers card processing).
+ * - The organizer is reimbursed the Costco cost of buyers' shares before
+ *   shopping, and earns max($30, 10% of that grocery cost) after hand-out.
+ * - POOLD keeps the rest. That breaks even at about $205 of groceries.
+ */
+export const MARKUP_RATE = 0.15;
+export const REWARD_MIN_CENTS = 3000;
+export const REWARD_RATE = 0.1;
+export const BREAK_EVEN_CENTS = 20415;
+/** Costco cost of some shares of a pack. */
+export const shareCost = (
+  priceCents: number,
+  quantity: number,
+  sharesPerPack: number,
+) =>
+  Math.floor((priceCents * quantity + Math.floor(sharesPerPack / 2)) / sharesPerPack);
+/** What a buyer pays for shares that cost this much at Costco (before the fee). */
+export const withMarkup = (costCents: number) =>
+  Math.round(costCents * (1 + MARKUP_RATE));
+/** The organizer's reward for a run with this much of buyers' groceries. */
+export const organizerReward = (groceryCents: number) =>
+  groceryCents > 0
+    ? Math.max(REWARD_MIN_CENTS, Math.round(groceryCents * REWARD_RATE))
+    : 0;
 
 export const registerInput = z.object({
   name: z
@@ -207,7 +233,7 @@ export interface OrderSummary {
   joined: boolean;
   /** Shares the signed-in user has claimed in this group. */
   myShares: number;
-  /** When the group was published (counts toward the weekly limit). */
+  /** When the group was published. */
   publishedAt: string | null;
   /** Organizer's average rating from buyers, and how many ratings. */
   organizerRating: { average: number; count: number } | null;
@@ -241,7 +267,11 @@ export interface Item {
   claimed: number;
   mine: number;
   remaining: number;
+  /** Price of one share for the viewer: buyers see the marked-up price,
+   * the organizer sees the Costco price (they pay for theirs at the store). */
   shareEstimateCents: number;
+  /** Costco price of one share. */
+  shareCostCents: number;
   shortfall: number;
   requiredPacks: number;
   unit: string | null;
@@ -260,6 +290,8 @@ export interface Claim {
 }
 export interface Member {
   userId: string;
+  /** Demo only: a sample buyer's pickup code, so one account can run a group. */
+  demoCode?: string;
   name: string;
   university: boolean;
   photo: string | null;
@@ -338,7 +370,12 @@ export interface PayoutSummary {
   collectedCents: number;
   releasedCents: number;
   heldCents: number;
+  /** Costco cost of buyers' shares: reimbursed when shopping starts. */
+  groceryCents: number;
+  /** max($30, 10% of groceryCents), paid after hand-out. */
+  rewardCents: number;
   releases: {
+    /** "fees" is the organizer's reward. */
     kind: "shopping" | "fees";
     amountCents: number;
     createdAt: string;

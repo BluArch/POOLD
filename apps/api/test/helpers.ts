@@ -47,8 +47,6 @@ export async function setup() {
       "INSERT INTO payment_methods(user_id,brand,last4,outcome) VALUES(?,'Visa','4242','ok') ON DUPLICATE KEY UPDATE outcome='ok'",
       [`demo-${key}`],
     );
-  // Tests publish many groups; the weekly limit is checked in its own test.
-  await execute(db, "UPDATE orders SET published_at=NULL");
   const login = async (key: string) => {
     const result =
       key === "maya"

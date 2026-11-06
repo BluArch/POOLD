@@ -137,5 +137,72 @@ export function claims(db: Pool) {
     });
     res.json({ ok: true });
   });
+
+  /**
+   * Demo only: sample buyers (Jordan, Alex, Priya) fill up the packs in a
+   * demo account's open group, so one account can show a whole run.
+   */
+  r.post("/orders/:id/demo-buyers", verified, async (req, res) => {
+    if (!req.user!.demo)
+      fail(403, "DEMO_ONLY", "Sample buyers are only for the demo account.");
+    await transaction(db, async (c) => {
+      const o = await first(c, "SELECT * FROM orders WHERE id=? FOR UPDATE", [
+        req.params.id,
+      ]);
+      if (!o || o.organizer_id !== req.user!.id)
+        fail(404, "NOT_FOUND", "Group not found.");
+      if (o.status !== "open")
+        fail(409, "NOT_OPEN", "Sample buyers can only join an open group.");
+      const buyers = ["demo-jordan", "demo-alex", "demo-priya"];
+      const its = await rows(
+        c,
+        "SELECT i.*,COALESCE((SELECT SUM(quantity) FROM share_claims s WHERE s.item_id=i.id),0) AS claimed FROM order_items i WHERE i.order_id=? AND i.available=TRUE ORDER BY name",
+        [o.id],
+      );
+      const add = new Map<string, Map<string, number>>();
+      let turn = 0;
+      for (const it of its) {
+        // Fill the pack that's started, or one whole pack if none is.
+        const claimed = Number(it.claimed);
+        const target = Math.min(
+          it.pack_count * it.shares_per_pack,
+          Math.max(1, Math.ceil(claimed / it.shares_per_pack)) *
+            it.shares_per_pack,
+        );
+        for (let n = claimed; n < target; n++) {
+          const who = buyers[turn++ % buyers.length];
+          const mine = add.get(who) ?? new Map<string, number>();
+          mine.set(it.id, (mine.get(it.id) ?? 0) + 1);
+          add.set(who, mine);
+        }
+      }
+      if (!add.size)
+        fail(409, "NOTHING_LEFT", "Every pack is already full.");
+      for (const [who, lines] of add) {
+        await execute(
+          c,
+          "INSERT IGNORE INTO payment_methods(user_id,brand,last4,outcome) VALUES(?,'Visa','4242','ok')",
+          [who],
+        );
+        await execute(
+          c,
+          "INSERT IGNORE INTO memberships(order_id,user_id,attending) VALUES(?,?,TRUE)",
+          [o.id, who],
+        );
+        for (const [item, qty] of lines)
+          await execute(
+            c,
+            "INSERT INTO share_claims(item_id,user_id,quantity) VALUES(?,?,?) ON DUPLICATE KEY UPDATE quantity=quantity+VALUES(quantity)",
+            [item, who, qty],
+          );
+      }
+      await execute(
+        c,
+        "UPDATE orders SET revision=revision+1 WHERE id=?",
+        [o.id],
+      );
+    });
+    res.json({ ok: true });
+  });
   return r;
 }

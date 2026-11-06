@@ -22,7 +22,6 @@ const SECTIONS: Section[] = [
     title: "Who organizes",
     points: [
       "Organizers split a trip they’re making anyway. They must take at least one share themselves.",
-      "Each organizer can start up to 2 groups a week.",
       "Organizers pay for their own share at the store, so they don’t pay anything in the app.",
       "If nobody else joins by the deadline, the group is cancelled automatically. Nothing is charged.",
     ],
@@ -32,9 +31,12 @@ const SECTIONS: Section[] = [
     title: "Paying for your shares",
     points: [
       "You save a card when you join. Nothing is charged while the group is open, so you can change or drop your shares for free.",
-      "When shares close, a hold is placed on your card for your shares plus a 5% service fee for the organizer.",
+      "Share prices are Costco’s price plus a 15% markup. It’s still cheaper than buying the same amount at other grocery stores, and it pays the organizer.",
+      "A 5% service fee is added to your total to cover card processing.",
+      "When shares close, a hold is placed on your card for your shares plus the fee.",
       "If your card is declined, you have 2 hours to update it. Shopping can’t start until every card is sorted; after 2 hours, unpaid shares are released.",
-      "When the organizer starts shopping, the hold is charged. POOLD releases the item money to the organizer then, and the service fees after every bag is handed out.",
+      "When the organizer starts shopping, the hold is charged. POOLD pays the organizer the Costco cost of your shares so they can buy them.",
+      "After every bag is handed out, the organizer earns $30, or 10% of buyers’ groceries if that’s more.",
     ],
   },
   {

@@ -86,7 +86,7 @@ test("Phase D: lock, resolve shortfall, shop, pack, collect once, complete and r
       undefined,
     );
     const member = await view(t.jordan);
-    assert.match(member.collectionCode, /^[A-F0-9]{20}$/);
+    assert.match(member.collectionCode, /^\d{6}$/);
     assert.equal((await change({ priceCents: 1500 })).status, 409);
     assert.equal((await status("completed")).status, 409);
     assert.equal(
@@ -146,14 +146,21 @@ test("Phase D: lock, resolve shortfall, shop, pack, collect once, complete and r
       ).body.error.code,
       "GRACE_PERIOD",
     );
-    // Shopping money was released; the 5% fee is still held.
+    // The Costco cost of buyers' shares was released for shopping.
     let org = await view();
-    assert.ok(org.payouts.releasedCents > 0);
-    assert.ok(org.payouts.heldCents > 0);
+    assert.equal(org.payouts.releasedCents, org.payouts.groceryCents);
+    assert.ok(org.payouts.collectedCents > org.payouts.groceryCents);
+    // After hand-out the organizer earns max($30, 10% of groceries).
+    assert.equal(
+      org.payouts.rewardCents,
+      Math.max(3000, Math.round(org.payouts.groceryCents * 0.1)),
+    );
     assert.equal((await status("completed")).status, 200);
     org = await view();
-    assert.equal(org.payouts.heldCents, 0);
-    assert.equal(org.payouts.releasedCents, org.payouts.collectedCents);
+    assert.equal(
+      org.payouts.releasedCents,
+      org.payouts.groceryCents + org.payouts.rewardCents,
+    );
     // The buyer rates the organizer; it shows on the organizer's profile.
     assert.equal((await view(t.jordan)).canRate, true);
     assert.equal(
@@ -246,7 +253,7 @@ test("Phase D: unavailable items and changed prices invalidate estimates and not
     );
     const changed = (await call(`/orders/${id}`, "GET", undefined, t.jordan))
       .body;
-    assert.equal(changed.myEstimateCents, 300);
+    assert.equal(changed.myEstimateCents, 345);
     await call(
       `/orders/${id}/items/${iid}`,
       "PATCH",
