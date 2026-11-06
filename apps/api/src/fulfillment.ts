@@ -50,10 +50,10 @@ export function fulfillment(db: Pool) {
         ]);
       } else if (next[o.status] !== status)
         fail(409, "INVALID_TRANSITION", "Follow the order steps in sequence.");
-      // Closing shares: the organizer must be buying too, there must be
-      // buyers to split with, and then each buyer's card gets a hold.
+      // Closing shares: the organizer must be buying too, then each buyer's
+      // card gets a hold. The organizer can close even if nobody else joined.
       if (status === "locked") {
-        const problem = await closeProblem(c, o);
+        const problem = await closeProblem(c, o, { needBuyers: false });
         if (problem) fail(409, problem.code, problem.message);
       }
       // Shopping can't start while any buyer still has a declined card.
@@ -623,6 +623,7 @@ export async function markNoShow(
 export async function closeProblem(
   c: DB,
   o: { id: string; organizer_id: string },
+  { needBuyers = true } = {},
 ) {
   const mine = await first(
     c,
@@ -635,6 +636,7 @@ export async function closeProblem(
       message:
         "Add your own shares first. Organizers split runs they’re shopping for anyway.",
     };
+  if (!needBuyers) return null;
   const others = await first(
     c,
     "SELECT COUNT(DISTINCT s.user_id) AS n FROM share_claims s JOIN order_items i ON i.id=s.item_id WHERE i.order_id=? AND s.user_id<>? AND i.available=TRUE",

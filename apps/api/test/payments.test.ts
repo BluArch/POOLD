@@ -143,18 +143,32 @@ test("payments: declined cards get 2 hours, shopping waits, then shares drop", a
   }
 });
 
-test("organizer rules: own share, buyers needed, card before joining", async () => {
+test("organizer rules: own share, closing alone, card before joining", async () => {
   const h = await setup();
   const { call, tokens: t } = h;
   try {
     const id = await h.create();
     await h.publish(id);
-    await h.claim(id, t.maya);
-    // Nobody else joined, so there's nothing to split.
+    // The organizer has to take a share before closing.
     assert.equal(
       (await call(`/orders/${id}/status`, "POST", { status: "locked" }, t.maya))
         .body.error.code,
-      "NO_BUYERS",
+      "ORGANIZER_SHARE",
+    );
+    // With their own share, they can close even if nobody else joined.
+    const solo = await h.create();
+    await h.publish(solo);
+    await h.claim(solo, t.maya);
+    assert.equal(
+      (
+        await call(
+          `/orders/${solo}/status`,
+          "POST",
+          { status: "locked" },
+          t.maya,
+        )
+      ).status,
+      200,
     );
     // Buyers need a saved card to confirm shares.
     await execute(

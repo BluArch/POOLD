@@ -295,10 +295,6 @@ function CollectStep({
 }) {
   const o = v.order;
   const myShare = v.myClaims.some((c) => c.available && c.quantity > 0);
-  const buyers = v.members.filter(
-    (m) =>
-      m.userId !== v.order.organizerId && m.claims.some((c) => c.quantity > 0),
-  ).length;
   return (
     <>
       {!readOnly && !myShare && (
@@ -398,13 +394,11 @@ function CollectStep({
           label="Close shares"
           warning="Members can’t change their shares after this. Each buyer’s card gets a hold for their shares + fee; nothing is charged until you start shopping."
           refresh={refresh}
-          disabled={!myShare || buyers === 0}
+          disabled={!myShare}
           blocker={
             !myShare
               ? "Add your own share first: open the My share tab. You pay for it at the store."
-              : buyers === 0
-                ? "Waiting for someone else to join. If nobody joins by the deadline, the group is cancelled."
-                : undefined
+              : undefined
           }
         />
       )}
