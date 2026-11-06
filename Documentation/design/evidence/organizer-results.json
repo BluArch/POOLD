@@ -1,0 +1,8 @@
+{
+  "checks": [
+    "All four Start destinations open the correct existing routes",
+    "Sticky Save draft creates and edits a valid quick split through unchanged payloads",
+    "Browser draft publication → close shares confirmation → shopping check → ready → code handoff → completion"
+  ],
+  "errors": []
+}
