@@ -111,7 +111,12 @@ export default function Order() {
               onMyShare={() => setMode("member")}
             />
           ) : (
-            <MemberView view={v} refresh={r.refresh} invite={invite} />
+            <MemberView
+              view={v}
+              refresh={r.refresh}
+              invite={invite}
+              browse={view === "browse"}
+            />
           )}
         </>
       )}

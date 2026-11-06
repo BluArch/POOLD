@@ -24,6 +24,7 @@ import {
   ScreenFooter,
 } from "./ui";
 import { Collapsible } from "./Sections";
+import { ItemIcon } from "./ItemIcon";
 import { RequestCard, RequestForm } from "./RequestList";
 
 import {
@@ -40,15 +41,24 @@ export function MemberView({
   view: v,
   refresh,
   invite,
+  browse = false,
 }: {
   view: OrderView;
   refresh: () => Promise<void>;
   invite?: string;
+  /** Opened with "View list": show what's in it before picking anything. */
+  browse?: boolean;
 }) {
   const o = v.order;
   const canChange = o.status === "open" && Date.parse(o.deadline) > Date.now();
   const hasShares = v.myClaims.some((c) => c.quantity > 0);
   const full = o.memberCount >= o.maxMembers && !o.joined;
+  const [looking, setLooking] = useState(browse && !hasShares);
+
+  if (canChange && (looking || full) && !hasShares)
+    return (
+      <BrowseList view={v} full={full} onJoin={() => setLooking(false)} />
+    );
 
   return (
     <>
@@ -368,6 +378,89 @@ function GroupRequests({
         />
       ))}
     </Collapsible>
+  );
+}
+
+/** The whole list, read-only, with a low-pressure way in. */
+function BrowseList({
+  view: v,
+  full,
+  onJoin,
+}: {
+  view: OrderView;
+  full: boolean;
+  onJoin: () => void;
+}) {
+  const items = v.items.filter((i) => i.available);
+  return (
+    <>
+      <View style={[styles.between, { alignItems: "baseline" }]}>
+        <Text style={styles.h2}>What’s in this group</Text>
+        <Text style={[type.mono, { fontSize: 12 }]}>
+          {items.length} {items.length === 1 ? "item" : "items"}
+        </Text>
+      </View>
+      <View style={[styles.card, { gap: 0, paddingVertical: 4 }]}>
+        {items.map((i, n) => (
+          <View
+            key={i.id}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 12,
+              paddingVertical: 12,
+              borderTopWidth: n ? 1 : 0,
+              borderColor: P.line,
+            }}
+          >
+            <ItemIcon item={i} size={44} />
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={styles.text} numberOfLines={2}>
+                {i.name}
+              </Text>
+              <Text style={styles.muted} numberOfLines={2}>
+                {describeShare(i).share}
+              </Text>
+              <Text style={[type.mono, { fontSize: 12 }]}>
+                {i.remaining > 0
+                  ? `${i.remaining} of ${i.packCount * i.sharesPerPack} shares left`
+                  : "Fully claimed"}
+              </Text>
+            </View>
+            <View style={{ alignItems: "flex-end" }}>
+              <Text style={type.label}>{money(i.shareEstimateCents)}</Text>
+              <Text style={[type.mono, { fontSize: 11 }]}>per share</Text>
+            </View>
+          </View>
+        ))}
+      </View>
+      {full ? (
+        <View style={styles.note}>
+          <Text style={styles.text}>This group is full.</Text>
+        </View>
+      ) : (
+        <View
+          style={{
+            backgroundColor: brand.yellowSoft,
+            borderRadius: 18,
+            padding: 16,
+            gap: 12,
+          }}
+        >
+          <View style={[styles.row, { gap: 10, alignItems: "flex-start" }]}>
+            <Ionicons name="shield-checkmark-outline" size={20} color={P.ink} />
+            <Text style={[styles.text, { flex: 1 }]}>
+              Joining is free. You pick only the shares you want, and nothing
+              is charged until shares close. You can change or drop them until
+              then.
+            </Text>
+          </View>
+          <Button icon="add-circle-outline" onPress={onJoin}>
+            Join and pick shares
+          </Button>
+        </View>
+      )}
+    </>
   );
 }
 

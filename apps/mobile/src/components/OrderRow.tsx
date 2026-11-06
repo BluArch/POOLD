@@ -37,6 +37,12 @@ export function OrderRow({
       pathname: "/(tabs)/order/[id]",
       params: { id: o.id, ...(organize ? { view: "organize" } : {}) },
     });
+  // Look at the list without picking anything.
+  const browse = () =>
+    router.push({
+      pathname: "/(tabs)/order/[id]",
+      params: { id: o.id, view: "browse" },
+    });
   const full = o.memberCount >= o.maxMembers && !o.joined;
   const items =
     o.previewItems ??
@@ -171,41 +177,81 @@ export function OrderRow({
         </View>
       </Pressable>
       {join && o.status === "open" && (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={
-            o.joined ? `View your shares in ${o.name}` : `Join ${o.name}`
-          }
-          disabled={full}
-          onPress={open}
-          style={({ pressed }) => ({
-            minHeight: 46,
-            borderRadius: 999,
-            flexDirection: "row",
-            gap: 8,
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: o.joined ? P.paper : P.carrot,
-            borderWidth: o.joined ? 1.5 : 0,
-            borderColor: P.line,
-            opacity: full ? 0.45 : pressed ? 0.85 : 1,
-          })}
-        >
-          <Ionicons
-            name={o.joined ? "bag-check-outline" : "add-circle-outline"}
-            size={19}
-            color={o.joined ? P.ink : P.white}
-          />
-          <Text style={[type.label, { color: o.joined ? P.ink : P.white }]}>
-            {full
-              ? "Group is full"
-              : o.joined
-                ? "View my shares"
-                : "Join group"}
-          </Text>
-        </Pressable>
+        <View style={{ gap: 8 }}>
+          {o.joined || full ? (
+            <CardButton
+              label={full ? "View list" : "View my shares"}
+              icon={full ? "list-outline" : "bag-check-outline"}
+              a11y={full ? `View what's in ${o.name}` : `View your shares in ${o.name}`}
+              onPress={full ? browse : open}
+            />
+          ) : (
+            <>
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <CardButton
+                  label="View list"
+                  icon="list-outline"
+                  a11y={`View what's in ${o.name}`}
+                  onPress={browse}
+                />
+                <CardButton
+                  primary
+                  label="Join group"
+                  icon="add-circle-outline"
+                  a11y={`Join ${o.name}`}
+                  onPress={open}
+                />
+              </View>
+              <Text
+                style={[type.mono, { fontSize: 12, textAlign: "center" }]}
+              >
+                Free to join · nothing is charged until shares close
+              </Text>
+            </>
+          )}
+        </View>
       )}
     </View>
+  );
+}
+
+function CardButton({
+  label,
+  icon,
+  a11y,
+  onPress,
+  primary = false,
+}: {
+  label: string;
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  a11y: string;
+  onPress: () => void;
+  primary?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={a11y}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flex: 1,
+        minHeight: 46,
+        borderRadius: 999,
+        flexDirection: "row",
+        gap: 8,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: primary ? P.carrot : P.paper,
+        borderWidth: primary ? 0 : 1.5,
+        borderColor: P.line,
+        opacity: pressed ? 0.85 : 1,
+      })}
+    >
+      <Ionicons name={icon} size={19} color={primary ? P.white : P.ink} />
+      <Text style={[type.label, { color: primary ? P.white : P.ink }]}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
