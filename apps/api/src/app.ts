@@ -106,6 +106,10 @@ export function createApp(
     await db.query("SELECT 1");
     res.json({ ok: true, database: "mysql" });
   });
+  app.get("/api/version", (_req, res) => {
+    res.set("Cache-Control", "no-store");
+    res.json({ commit: process.env.RENDER_GIT_COMMIT ?? null });
+  });
   app.use(
     "/api",
     auth(db, {

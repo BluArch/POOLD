@@ -1,4 +1,4 @@
-name: CI
+name: CI and deploy
 
 on:
   push:
@@ -9,15 +9,14 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   verify:
     name: Verify app and migrations
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    concurrency:
+      group: ci-${{ github.ref }}
+      cancel-in-progress: true
     services:
       mysql:
         image: mysql:8.4
@@ -73,3 +72,39 @@ jobs:
           trap 'kill "$host_pid" 2>/dev/null || true; cat "$RUNNER_TEMP/poold-host.log"' EXIT
           curl --fail --retry 30 --retry-connrefused --retry-delay 2 http://127.0.0.1:4000/api/health
           node scripts/check-host.mjs http://127.0.0.1:4000
+
+  deploy:
+    name: Deploy and verify production
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: poold-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: Skip a commit superseded on main
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          current_main=$(gh api repos/BluArch/POOLD/git/ref/heads/main --jq .object.sha)
+          if [ "$current_main" = "$GITHUB_SHA" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "A newer main commit has its own pipeline; skipping this release."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Deploy the tested commit and wait for it to go live
+        if: steps.latest.outputs.deploy == 'true'
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+          DEPLOY_COMMIT: ${{ github.sha }}
+        run: node scripts/deploy-render.mjs
+      - name: Verify live database, web bundle, and deep links
+        if: steps.latest.outputs.deploy == 'true'
+        run: node scripts/check-host.mjs https://poold.onrender.com
