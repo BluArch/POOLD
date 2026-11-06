@@ -44,6 +44,7 @@ test("hosting: same-origin web routes preserve API responses and client IPs", as
     "TRUST_PROXY_HOPS",
     "APP_ORIGIN",
     "RENDER_EXTERNAL_URL",
+    "RENDER_GIT_COMMIT",
   ] as const;
   const previous = Object.fromEntries(
     keys.map((key) => [key, process.env[key]]),
@@ -58,6 +59,7 @@ test("hosting: same-origin web routes preserve API responses and client IPs", as
     process.env.TRUST_PROXY_HOPS = "1";
     delete process.env.APP_ORIGIN;
     process.env.RENDER_EXTERNAL_URL = "https://poold.example";
+    process.env.RENDER_GIT_COMMIT = "a".repeat(40);
     const db = { query: async () => [[], []] } as unknown as Pool;
     const app = createApp(db, {
       production: true,
@@ -83,6 +85,9 @@ test("hosting: same-origin web routes preserve API responses and client IPs", as
       ok: true,
       database: "mysql",
     });
+    const version = await fetch(base + "/api/version");
+    assert.equal(version.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await version.json(), { commit: "a".repeat(40) });
     const unknown = await fetch(base + "/api/missing");
     assert.equal(unknown.status, 404);
     assert.equal((await unknown.json()).error.code, "NOT_FOUND");

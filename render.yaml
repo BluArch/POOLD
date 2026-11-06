@@ -6,7 +6,8 @@ services:
     runtime: node
     plan: free
     region: oregon
-    autoDeployTrigger: checksPass
+    # GitHub Actions triggers the tested commit through the private deploy hook.
+    autoDeployTrigger: off
     buildCommand: npm ci --include=dev && npm run build:host
     startCommand: npm run start:host
     healthCheckPath: /api/health
