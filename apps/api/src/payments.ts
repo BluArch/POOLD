@@ -4,6 +4,9 @@ import type { Pool } from "mysql2/promise";
 import { z } from "zod";
 import {
   feeFor,
+  shareCost,
+  withMarkup,
+  organizerReward,
   type Payment,
   type PayoutSummary,
   type Hold,
@@ -21,10 +24,11 @@ import { id } from "./security.js";
  * 1. Confirming shares saves a card. Nothing is charged, so buyers can change
  *    their minds freely while the group is open.
  * 2. When shares close, a hold is placed on each buyer's card for their shares
- *    plus the 5% service fee. A declined card gets 2 hours to be fixed;
+ *    (Costco price + 15% markup) plus the 5% service fee. A declined card gets 2 hours to be fixed;
  *    shopping can't start until every hold is authorized or the shares drop.
- * 3. When the organizer starts shopping, the holds are charged and the item
- *    money is released to them. Fees are released after hand-out.
+ * 3. When the organizer starts shopping, the holds are charged and the
+ *    Costco cost of buyers' shares is released to them. After hand-out they
+ *    earn max($30, 10% of that cost); POOLD keeps the rest.
  * 4. Store price differences afterwards are refunded, or charged to the saved
  *    card if a price went up.
  * Organizers don't pay through the app: they pay for their own share at the
@@ -35,16 +39,30 @@ export const RETRY_MS = 2 * 3600000;
 const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 type O = { id: string; name: string; organizer_id: string };
 
-/** A member's share cost, using the same rounding as the order view. */
+/** A member's shares, per item line, using the same rounding as the order view. */
+async function memberLines(c: DB, oid: string, uid: string) {
+  return (
+    await rows(
+      c,
+      `SELECT i.price_cents,i.shares_per_pack,s.quantity
+       FROM share_claims s JOIN order_items i ON i.id=s.item_id
+       WHERE i.order_id=? AND s.user_id=? AND i.available=TRUE`,
+      [oid, uid],
+    )
+  ).map((l) => shareCost(l.price_cents, l.quantity, l.shares_per_pack));
+}
+
+/** Costco cost of a member's shares (what the organizer spends on them). */
+export async function memberCost(c: DB, oid: string, uid: string) {
+  return (await memberLines(c, oid, uid)).reduce((n, x) => n + x, 0);
+}
+
+/** A buyer's share price: Costco cost + 15% markup, per item line. */
 export async function memberEstimate(c: DB, oid: string, uid: string) {
-  const r = await first(
-    c,
-    `SELECT COALESCE(SUM(FLOOR((i.price_cents*s.quantity + FLOOR(i.shares_per_pack/2))/i.shares_per_pack)),0) AS cents
-     FROM share_claims s JOIN order_items i ON i.id=s.item_id
-     WHERE i.order_id=? AND s.user_id=? AND i.available=TRUE`,
-    [oid, uid],
+  return (await memberLines(c, oid, uid)).reduce(
+    (n, x) => n + withMarkup(x),
+    0,
   );
-  return Number(r.cents);
 }
 
 /** What a member pays through the app: shares + 5% fee. Organizers: 0. */
@@ -56,6 +74,18 @@ export async function memberOwed(
   if (uid === o.organizer_id) return 0;
   const shares = await memberEstimate(c, o.id, uid);
   return shares + feeFor(shares);
+}
+
+/** Costco cost of every buyer's shares (the organizer's own share excluded). */
+async function groceryCost(c: DB, o: { id: string; organizer_id: string }) {
+  let cents = 0;
+  for (const m of await rows(
+    c,
+    "SELECT user_id FROM memberships WHERE order_id=? AND user_id<>?",
+    [o.id, o.organizer_id],
+  ))
+    cents += await memberCost(c, o.id, m.user_id);
+  return cents;
 }
 
 export async function netPaid(c: DB, oid: string, uid: string) {
@@ -471,7 +501,7 @@ async function orderNet(c: DB, oid: string) {
   return Number(r.cents);
 }
 
-/** When shopping starts, the organizer gets the item money; fees stay held. */
+/** When shopping starts, the organizer gets the Costco cost of buyers' shares. */
 export async function releaseShoppingMoney(c: DB, o: O) {
   const members = await rows(
     c,
@@ -480,8 +510,8 @@ export async function releaseShoppingMoney(c: DB, o: O) {
   );
   let cents = 0;
   for (const m of members) {
-    const shares = await memberEstimate(c, o.id, m.user_id);
-    cents += Math.min(shares, Math.max(0, await netPaid(c, o.id, m.user_id)));
+    const cost = await memberCost(c, o.id, m.user_id);
+    cents += Math.min(cost, Math.max(0, await netPaid(c, o.id, m.user_id)));
   }
   if (cents <= 0) return;
   await execute(
@@ -493,19 +523,14 @@ export async function releaseShoppingMoney(c: DB, o: O) {
     c,
     o.organizer_id,
     o.id,
-    `${o.name}: ${dollars(cents)} released for shopping (test). Service fees are released after every bag is handed out.`,
+    `${o.name}: ${dollars(cents)} released for shopping (test). Your reward is paid after every bag is handed out.`,
     `payout-shopping:${o.id}`,
   );
 }
 
-/** After hand-out: release everything still held (the fees and any balance). */
+/** After hand-out: pay the organizer's reward, max($30, 10% of groceries). */
 export async function releaseRemaining(c: DB, o: O) {
-  const released = await first(
-    c,
-    "SELECT COALESCE(SUM(amount_cents),0) AS cents FROM payouts WHERE order_id=?",
-    [o.id],
-  );
-  const cents = (await orderNet(c, o.id)) - Number(released.cents);
+  const cents = organizerReward(await groceryCost(c, o));
   if (cents <= 0) return;
   await execute(
     c,
@@ -516,15 +541,17 @@ export async function releaseRemaining(c: DB, o: O) {
     c,
     o.organizer_id,
     o.id,
-    `${o.name}: ${dollars(cents)} in service fees released to you (test). Thanks for organizing!`,
+    `${o.name}: your ${dollars(cents)} organizer reward was released (test). Thanks for organizing!`,
     `payout-fees:${o.id}`,
   );
 }
 
 export async function payoutSummary(
   c: DB,
-  oid: string,
+  o: { id: string; organizer_id: string },
 ): Promise<PayoutSummary> {
+  const oid = o.id;
+  const grocery = await groceryCost(c, o);
   const list = await rows(
     c,
     "SELECT kind,amount_cents,created_at FROM payouts WHERE order_id=? ORDER BY created_at",
@@ -542,6 +569,8 @@ export async function payoutSummary(
     collectedCents: collected,
     releasedCents: released,
     heldCents: Math.max(0, collected - released),
+    groceryCents: grocery,
+    rewardCents: organizerReward(grocery),
     releases: list.map((p) => ({
       kind: p.kind,
       amountCents: p.amount_cents,

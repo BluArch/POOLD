@@ -36,12 +36,12 @@ const TIPS: {
   {
     icon: "receipt-outline",
     title: "Shop and upload proof",
-    text: "Starting shopping charges the holds and releases the item money to you. Upload the receipt and a photo.",
+    text: "Starting shopping charges the holds and pays you the Costco cost of buyers’ shares. Upload the receipt and a photo.",
   },
   {
     icon: "bag-handle-outline",
-    title: "Hand out and get your fee",
-    text: "Check each pickup code. The 5% service fees are released when every bag is handed out.",
+    title: "Hand out and get your reward",
+    text: "Check each pickup code. Once every bag is handed out you earn $30, or 10% of buyers’ groceries if that’s more.",
   },
 ];
 

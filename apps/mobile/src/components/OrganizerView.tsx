@@ -12,6 +12,8 @@ import {
   type ProductRequest,
   money,
   describeShare,
+  withMarkup,
+  REWARD_MIN_CENTS,
 } from "@poold/contracts";
 import { api, post } from "../api";
 import {
@@ -40,6 +42,7 @@ import {
   draftToInput,
 } from "./ItemEditor";
 import { DateTimeField, roundUp } from "./Pickers";
+import { useSession } from "../session";
 import { Collapsible, ProgressBar } from "./Sections";
 
 const STEPS = ["Shares", "Shop", "Hand out"];
@@ -387,6 +390,7 @@ function CollectStep({
         <AddItems view={v} refresh={refresh} />
       )}
       {!readOnly && <InviteTools view={v} />}
+      {!readOnly && <DemoBuyers view={v} refresh={refresh} />}
       {!readOnly && (
         <Advance
           view={v}
@@ -567,6 +571,42 @@ function AddItemForm({
       )}
       <Button secondary onPress={onCancel}>
         Cancel
+      </Button>
+    </View>
+  );
+}
+
+/** Demo account only: sample buyers fill the packs so one person can show a whole run. */
+function DemoBuyers({
+  view: v,
+  refresh,
+}: {
+  view: OrderView;
+  refresh: () => Promise<void>;
+}) {
+  const s = useSession(),
+    a = useAction();
+  if (!s.user?.demo || v.order.status !== "open") return null;
+  return (
+    <View style={[styles.note, { gap: 8 }]}>
+      <Text style={styles.label}>Demo</Text>
+      <Text style={styles.text}>
+        Have the sample buyers (Jordan, Alex and Priya) fill up the packs, so
+        you can run the whole group from this one account.
+      </Text>
+      <ErrorText message={a.error} />
+      <Button
+        secondary
+        icon="people-outline"
+        disabled={a.busy}
+        onPress={() =>
+          void a.run(async () => {
+            await post(`/orders/${v.order.id}/demo-buyers`, {});
+            await refresh();
+          })
+        }
+      >
+        {a.busy ? "Adding…" : "Add sample buyers"}
       </Button>
     </View>
   );
@@ -864,6 +904,7 @@ function HandOutStep({
         detail={`${o.pickupLocation} · ${when(o.pickupAt)} – ${when(o.pickupEnd)}`}
       />
       <DirectionsButton order={o} />
+      <MoneyCard view={v} />
       <View style={styles.card}>
         <View style={styles.between}>
           <Text style={styles.text}>Bags handed out</Text>
@@ -990,6 +1031,17 @@ function HandOutBag({
               onChangeText={(t) => setCode(t.replace(/[^\d ]/g, ""))}
               placeholder="6 digits from their phone"
             />
+            {!!m.demoCode && (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setCode(m.demoCode!)}
+                hitSlop={6}
+              >
+                <Text style={[type.mono, { color: P.carrot }]}>
+                  {`Demo: their code is ${m.demoCode.replace(/^(\d{3})(\d{3})$/, "$1 $2")}. Tap to fill it in.`}
+                </Text>
+              </Pressable>
+            )}
             <Button
               disabled={a.busy || !code.trim()}
               onPress={() =>
@@ -1065,9 +1117,6 @@ function HandOutBag({
 
 function Done({ view: v }: { view: OrderView }) {
   const bags = bagsOf(v);
-  const collected = v.members
-    .filter((m) => m.userId !== v.order.organizerId)
-    .reduce((n, m) => n + m.paidCents, 0);
   return (
     <Celebrate
       title="Group complete!"
@@ -1077,7 +1126,7 @@ function Done({ view: v }: { view: OrderView }) {
         {[
           [String(bags.length), "Bags"],
           [String(v.members.length), "Members"],
-          [money(collected), "Collected"],
+          [money(v.payouts?.rewardCents ?? 0), "Your reward"],
         ].map(([n, label]) => (
           <View
             key={label}
@@ -1184,18 +1233,34 @@ function MoneyCard({ view: v }: { view: OrderView }) {
           total={Math.max(expected, 1)}
         />
       )}
-      {p && !open && !locked && (
+      {p && p.groceryCents > 0 && (
         <View style={{ gap: 6 }}>
           <View style={styles.between}>
-            <Text style={type.mono}>Released to you</Text>
-            <Text style={[type.label, { color: brand.greenDeep }]}>
-              {money(p.releasedCents)}
+            <Text style={[type.mono, { flex: 1 }]}>
+              For buyers’ groceries (Costco price)
+              {!open && !locked ? "" : ", paid to you when shopping starts"}
             </Text>
+            <Text style={type.label}>{money(p.groceryCents)}</Text>
           </View>
           <View style={styles.between}>
-            <Text style={type.mono}>Still held (5% fees, after hand-out)</Text>
-            <Text style={type.label}>{money(p.heldCents)}</Text>
+            <Text style={[type.mono, { flex: 1 }]}>
+              {v.order.status === "completed"
+                ? "Your reward (released)"
+                : "Your reward, after hand-out"}
+            </Text>
+            <Text style={[type.label, { color: brand.greenDeep }]}>
+              {money(p.rewardCents)}
+            </Text>
           </View>
+          {!open && !locked && (
+            <View style={styles.between}>
+              <Text style={type.mono}>Released to you so far</Text>
+              <Text style={type.label}>{money(p.releasedCents)}</Text>
+            </View>
+          )}
+          <Text style={[type.mono, { fontSize: 12 }]}>
+            {`Reward = ${money(REWARD_MIN_CENTS)} or 10% of buyers’ groceries, whichever is more.`}
+          </Text>
         </View>
       )}
       {declined > 0 && (
@@ -1258,7 +1323,8 @@ function DraftReview({
               <Text style={styles.h3}>{i.name}</Text>
             </View>
             <Text style={styles.muted}>
-              {describeShare(i).share} · {money(i.shareEstimateCents)} per share
+              {describeShare(i).share} · {money(i.shareCostCents)} at Costco
+              · buyers pay {money(withMarkup(i.shareCostCents))}
             </Text>
             <Text style={styles.muted}>
               {describeShare(i).pack} · up to {i.packCount * i.sharesPerPack}{" "}

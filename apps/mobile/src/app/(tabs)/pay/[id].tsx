@@ -319,7 +319,7 @@ export default function Pay() {
                   label={
                     v.isOrganizer
                       ? "Service fee (none for organizers)"
-                      : "Service fee (5%, held until hand-out)"
+                      : "Service fee (5%)"
                   }
                   value={money(v.myFeeCents)}
                 />

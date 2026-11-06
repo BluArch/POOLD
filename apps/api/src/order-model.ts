@@ -7,7 +7,7 @@ import type {
   Claim,
   Member,
 } from "@poold/contracts";
-import { feeFor } from "@poold/contracts";
+import { feeFor, shareCost, withMarkup } from "@poold/contracts";
 import type { DB } from "./db.js";
 import { first, rows, execute, iso } from "./db.js";
 import { fail } from "./errors.js";
@@ -54,8 +54,8 @@ export function owner(o: any, uid: string) {
   if (o.organizer_id !== uid)
     fail(403, "ORGANIZER_ONLY", "Only the organizer can do that.");
 }
-export const estimate = (price: number, quantity: number, shares: number) =>
-  Math.floor((price * quantity + Math.floor(shares / 2)) / shares);
+/** Costco cost of shares; buyers pay withMarkup() of this. */
+export const estimate = shareCost;
 export async function summary(
   db: DB,
   o: any,
@@ -137,7 +137,11 @@ export async function orderView(
       claimed,
       mine: Number(i.mine),
       remaining: i.pack_count * i.shares_per_pack - claimed,
-      shareEstimateCents: estimate(i.price_cents, 1, i.shares_per_pack),
+      shareEstimateCents:
+        o.organizer_id === uid
+          ? estimate(i.price_cents, 1, i.shares_per_pack)
+          : withMarkup(estimate(i.price_cents, 1, i.shares_per_pack)),
+      shareCostCents: estimate(i.price_cents, 1, i.shares_per_pack),
       requiredPacks: packs,
       shortfall: packs * i.shares_per_pack - claimed,
       unit: i.unit ?? null,
@@ -146,25 +150,34 @@ export async function orderView(
       catalogKey: i.catalog_key ?? null,
     };
   });
-  const claimFor = (i: Item, quantity: number): Claim => ({
+  // Buyers pay the marked-up price; the organizer pays Costco's at the store.
+  const claimFor = (i: Item, quantity: number, buyer: string): Claim => ({
     itemId: i.id,
     name: i.name,
     shareLabel: i.shareLabel,
     quantity,
-    estimateCents: i.available
-      ? estimate(i.priceCents, quantity, i.sharesPerPack)
-      : 0,
+    estimateCents: !i.available
+      ? 0
+      : buyer === o.organizer_id
+        ? estimate(i.priceCents, quantity, i.sharesPerPack)
+        : withMarkup(estimate(i.priceCents, quantity, i.sharesPerPack)),
     available: i.available,
     portioning: i.portioning,
   });
   const myClaims = items
     .filter((i) => i.mine > 0)
-    .map((i) => claimFor(i, i.mine));
+    .map((i) => claimFor(i, i.mine, uid));
   const ms = await rows(
     db,
     `SELECT m.*,u.name,u.photo,(u.verified AND u.email LIKE '%@uvic.ca') AS university,(SELECT COUNT(*) FROM memberships mc JOIN orders oc ON oc.id=mc.order_id WHERE mc.user_id=u.id AND (mc.collected_at IS NOT NULL OR oc.organizer_id=u.id) AND oc.status='completed') AS completed FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.order_id=?`,
     [o.id],
   );
+  // Demo account running its own group: show sample buyers' pickup codes so
+  // one person can hand out every share.
+  const demoOrganizer =
+    o.organizer_id === uid &&
+    o.status === "ready" &&
+    !!(await first(db, "SELECT demo FROM users WHERE id=? AND demo=TRUE", [uid]));
   const members: Member[] = [];
   for (const m of ms) {
     if (o.organizer_id !== uid && m.user_id !== uid) continue;
@@ -177,9 +190,21 @@ export async function orderView(
       claimFor(
         items.find((i) => i.id === c.item_id)!,
         c.quantity,
+        m.user_id,
       ),
     );
+    const demoCode =
+      demoOrganizer && m.user_id !== uid && m.user_id.startsWith("demo-")
+        ? (
+            await first(
+              db,
+              "SELECT code FROM collection_tokens WHERE order_id=? AND user_id=? AND used_at IS NULL",
+              [o.id, m.user_id],
+            )
+          )?.code
+        : undefined;
     members.push({
+      ...(demoCode ? { demoCode } : {}),
       userId: m.user_id,
       name: m.name,
       photo: m.photo,
@@ -221,7 +246,7 @@ export async function orderView(
       o.organizer_id === uid,
     ),
     ...(o.organizer_id === uid
-      ? { payouts: await payoutSummary(db, o.id) }
+      ? { payouts: await payoutSummary(db, o) }
       : {}),
     proof: await proofFor(db, o, uid),
     myRating: rating ? Number(rating.stars) : null,

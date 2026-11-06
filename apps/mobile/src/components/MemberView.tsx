@@ -505,7 +505,7 @@ function ShareChooser({
 
   const categories = ["All", ...new Set(v.items.map((i) => i.category))];
   const selected = v.items.filter((i) => (qty[i.id] ?? 0) > 0);
-  const total = selected.reduce((n, i) => n + estimateFor(i, qty[i.id]), 0);
+  const total = selected.reduce((n, i) => n + estimateFor(i, qty[i.id], v.isOrganizer), 0);
   const changed = v.items.some((i) => (qty[i.id] ?? 0) !== i.mine);
   const releasing = selected.length === 0;
   const fee = feeFor(total, v.isOrganizer);

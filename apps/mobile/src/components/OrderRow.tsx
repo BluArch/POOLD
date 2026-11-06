@@ -2,7 +2,12 @@ import React from "react";
 import { View, Text, Pressable } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { type OrderSummary, money } from "@poold/contracts";
+import {
+  type OrderSummary,
+  money,
+  shareCost,
+  withMarkup,
+} from "@poold/contracts";
 import { styles } from "./ui";
 import { palette as P, type, deadlineLabel, shadow, brand } from "../theme";
 import { ItemIcon } from "./ItemIcon";
@@ -58,13 +63,13 @@ export function OrderRow({
         unit: null,
       }));
   const count = o.preview.split(" · ").filter(Boolean).length;
+  // Buyers see the marked-up price; your own groups show Costco's.
   const perShare = items
     .filter((i) => i.sharesPerPack > 0)
-    .map((i) =>
-      Math.floor(
-        (i.priceCents + Math.floor(i.sharesPerPack / 2)) / i.sharesPerPack,
-      ),
-    );
+    .map((i) => {
+      const cost = shareCost(i.priceCents, 1, i.sharesPerPack);
+      return organize || byYou ? cost : withMarkup(cost);
+    });
   const from = perShare.length ? Math.min(...perShare) : 0;
   const organizer = o.organizerName
     .split(" ")
