@@ -42,7 +42,9 @@ export function createApp(
 ) {
   const production =
       options.production ?? process.env.NODE_ENV === "production",
-    demo = !production && (options.demo ?? process.env.DEMO_ENABLED === "true");
+    demo =
+      (!production || process.env.HOSTED_DEMO_ENABLED === "true") &&
+      (options.demo ?? process.env.DEMO_ENABLED === "true");
   const origin =
     options.origin ??
     process.env.APP_ORIGIN ??
@@ -127,7 +129,7 @@ export function createApp(
   app.use("/api", payments(db));
   app.use("/api", claims(db));
   app.use("/api", orders(db));
-  if (demo)
+  if (demo && !production)
     app.get("/api/dev/outbox", async (_req, res) => {
       try {
         const raw = await readFile(

@@ -23,7 +23,13 @@ For the existing service, confirm the live dashboard matches the Blueprint: bran
 
 Add new migrations as new, uniquely named `.sql` files in `db/migrations`; never rewrite an applied migration. Keep schema changes compatible with the previous app version because it can still be serving traffic while migrations run. MySQL DDL auto-commits: failed partial migrations need a reviewed repair; application rollback does not undo schema changes. CI checks fresh installation and repeat execution, not every possible production-data upgrade.
 
-Only changes committed and pushed to `main` deploy. Local uncommitted changes are excluded. Existing Render secrets remain server-side; new credentials or external provider setup still need explicit configuration in Render. Demo/catalogue seeds do not run in production. Native iOS/Android binaries require a separate mobile release; this pipeline updates the hosted web app and API. Background jobs use the new API code but still pause when Render Free sleeps.
+Only changes committed and pushed to `main` deploy. Local uncommitted changes are excluded. Existing Render secrets remain server-side; new credentials or external provider setup still need explicit configuration in Render. Native iOS/Android binaries require a separate mobile release; this pipeline updates the hosted web app and API. Background jobs use the new API code but still pause when Render Free sleeps.
+
+### Hosted class demo
+
+This hosted service explicitly enables the public Maya demo with both `DEMO_ENABLED=true` and `HOSTED_DEMO_ENABLED=true` in Render. Startup seeds Maya plus three supporting sample actors and four sample groups. Anyone can use the shared Maya demo account through the demo sign-in button. Production cookies, TLS, ordinary UVic sign-in rules, and email delivery remain enabled; the development email outbox is never exposed in production.
+
+To disable the hosted demo, set both flags to `false` and redeploy. Production defaults to denying demo access without the separate `HOSTED_DEMO_ENABLED=true` opt-in. Existing Maya demo sessions are ignored once demo access is disabled. Startup refreshes expired sample groups while retaining demo groups in progress; it does not delete ordinary user accounts or orders. Any one-time data cleanup is performed separately, never as a migration or deployment step.
 
 To verify a release, inspect the GitHub `CI and deploy` run and Render deploy logs for the same commit, confirm the `Applied ...` / `Schema ready (...)` startup output, and run `node scripts/check-host.mjs https://poold.onrender.com` (wake the Free service first if needed). For application rollback, select a previously successful deploy in Render only after checking compatibility with the current schema.
 
@@ -77,7 +83,7 @@ These are currently $0 tiers within their limits, suited to the course MVP/demo.
 6. Render supplies `RENDER_EXTERNAL_URL`, used as the allowed browser origin and invitation URL. Web requests use `/api`, keeping HttpOnly cookies on the same origin. For a custom domain, set `APP_ORIGIN` and `PUBLIC_APP_URL` to its HTTPS origin. `STATIC_WEB_DIR=../mobile/dist` is relative to the API workspace used by the start command.
 7. Native Expo builds need `EXPO_PUBLIC_API_URL=https://poold.onrender.com/api` in the mobile environment, followed by a client restart/rebuild. The existing local-development mobile `.env` is retained. The hosted web build already uses same-origin `/api`. Never put private credentials in `EXPO_PUBLIC_*` variables.
 
-Production disables demo login and the development outbox. Optional FCM stays disabled until its own credentials and native configuration are supplied. In-app notifications remain available.
+Production always disables the development outbox. Demo login requires the explicit hosted-demo opt-in described above. Optional FCM stays disabled until its own credentials and native configuration are supplied. In-app notifications remain available.
 
 ## Verification
 
