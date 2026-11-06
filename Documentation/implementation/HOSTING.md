@@ -10,6 +10,23 @@ Live October 30, 2026: **Render Free** for Express and the Expo web app, **Aiven
 
 This preserves the current MySQL transactions and constraints. Firebase Functions requires the billing-enabled Blaze plan, and Firestore would require a database rewrite. Supabase uses PostgreSQL, requiring a migration. Vercel Hobby's daily cron limit does not fit the existing minute-based reminders. Koyeb's current signup/billing requirements make its free instance less straightforward for a new account.
 
+## Continuous deployment from main
+
+The pipeline is defined in `.github/workflows/ci.yml` and `render.yaml`:
+
+1. Every push to `main` and every pull request runs GitHub Actions with Node 24 and a disposable MySQL 8.4 database. It installs locked dependencies, checks types and lint, applies every SQL migration twice to check repeat execution, runs API integration tests, builds the hosted API/web bundle, and smoke-tests the hosted start command, database health, JavaScript bundle and deep links.
+2. Render tracks `main` with **Auto-Deploy: After CI Checks Pass** (`autoDeployTrigger: checksPass`). All detected checks must pass before it builds a new release. No production database credentials are stored in GitHub Actions.
+3. Render builds both the Express API and Expo web app with `npm ci --include=dev && npm run build:host`. It starts with `npm run start:host`, which applies pending migrations to the Aiven database using Render's private `DATABASE_URL` and verified TLS before starting Express. The migration lock serializes execution, and `schema_migrations` skips versions already applied. A migration error stops startup.
+4. Render checks `/api/health` before switching traffic to the new instance. The URL remains `https://poold.onrender.com`.
+
+For the existing service, confirm the live dashboard matches the Blueprint: branch `main`, repository-root working directory, no build filters, the build/start commands above, `/api/health`, and **After CI Checks Pass**. Editing `render.yaml` alone does not update a manually configured service. Never configure a paid pre-deploy job for this Free service.
+
+Add new migrations as new, uniquely named `.sql` files in `db/migrations`; never rewrite an applied migration. Keep schema changes compatible with the previous app version because it can still be serving traffic while migrations run. MySQL DDL auto-commits: failed partial migrations need a reviewed repair; application rollback does not undo schema changes. CI checks fresh installation and repeat execution, not every possible production-data upgrade.
+
+Only changes committed and pushed to `main` deploy. Local uncommitted changes are excluded. Existing Render secrets remain server-side; new credentials or external provider setup still need explicit configuration in Render. Demo/catalogue seeds do not run in production. Native iOS/Android binaries require a separate mobile release; this pipeline updates the hosted web app and API. Background jobs use the new API code but still pause when Render Free sleeps.
+
+To verify a release, inspect the GitHub `CI` run and Render deploy logs for the same commit, confirm the `Applied ...` / `Schema ready (...)` startup output, and run `node scripts/check-host.mjs https://poold.onrender.com` (wake the Free service first if needed). For application rollback, select a previously successful deploy in Render only after checking compatibility with the current schema.
+
 ## Cloud setup progress — October 30, 2026
 
 - Aiven service `poold-mysql` exists on the **Free** tier, running MySQL 8.4.11 in DigitalOcean San Francisco.
@@ -38,7 +55,7 @@ These are currently $0 tiers within their limits, suited to the course MVP/demo.
 
 1. Sign in to Render and Aiven. Create an Aiven **MySQL Free** service; avoid trial/paid plans. Use a fresh database, without local development accounts. Copy the MySQL URI and download the project CA certificate. Use a dedicated application database/user when available; the deployment user needs the schema permissions required by the migrations.
 2. Create a Brevo Free account, verify the sender, and activate transactional email. Copy its SMTP login and **SMTP key**. Render Free blocks ports 25, 465 and 587; the Blueprint selects Brevo's **2525**, with mandatory STARTTLS in POOLD's mailer. Verify connection/authentication and actual recipient delivery after deployment. Never configure unencrypted SMTP.
-3. The hosting changes are on GitHub branch `codex/render-aiven-hosting`. Create a Render Blueprint from POOLD, that branch, and `render.yaml`. Keep the service on **Free**. Automatic deploys are disabled; deploy reviewed revisions manually. Alternatively, a manually configured web service must use that branch, repository-root working directory, the build/start commands below, and `/api/health` as its health check.
+3. Create a Render Blueprint from POOLD, branch `main`, and `render.yaml`. Keep the service on **Free** with automatic deploys **After CI Checks Pass**. Alternatively, a manually configured web service must use `main`, repository-root working directory, the build/start commands below, `/api/health` as its health check, and the same auto-deploy setting.
 4. Supply the private server variables when prompted:
 
    | Variable | Value |
