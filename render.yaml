@@ -17,7 +17,9 @@ services:
       - key: NODE_ENV
         value: production
       - key: DEMO_ENABLED
-        value: "false"
+        value: "true"
+      - key: HOSTED_DEMO_ENABLED
+        value: "true"
       - key: FCM_ENABLED
         value: "false"
       - key: STATIC_WEB_DIR

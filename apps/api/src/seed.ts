@@ -5,8 +5,14 @@ import { CATALOG, itemFromUnits, type ItemInput } from "@poold/contracts";
 import { database, execute, transaction, first } from "./db.js";
 import { passwordHash, token } from "./security.js";
 export async function seed(db: Pool) {
-  if (process.env.NODE_ENV === "production")
-    throw new Error("Development seeding is disabled in production.");
+  if (
+    process.env.NODE_ENV === "production" &&
+    (process.env.HOSTED_DEMO_ENABLED !== "true" ||
+      process.env.DEMO_ENABLED !== "true")
+  )
+    throw new Error(
+      "Hosted seeding requires both HOSTED_DEMO_ENABLED=true and DEMO_ENABLED=true.",
+    );
   for (const [key, name] of [
     ["maya", "Maya R."],
     ["jordan", "Jordan L."],
@@ -157,7 +163,7 @@ export async function seed(db: Pool) {
       "INSERT IGNORE INTO payment_methods(user_id,brand,last4,outcome) VALUES(?,?,?,'ok')",
       [`demo-${who}`, last4 === "4444" ? "Mastercard" : "Visa", last4],
     );
-  console.log("Local demo account ready: Maya.");
+  console.log("Demo account ready: Maya.");
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const db = database();
