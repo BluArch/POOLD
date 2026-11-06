@@ -23,6 +23,8 @@ export const itemInput = z
     packUnits: z.number().int().min(1).max(10000).nullable().default(null),
     shareUnits: z.number().int().min(1).max(10000).nullable().default(null),
     catalogKey: z.string().trim().max(60).nullable().default(null),
+    offerId: z.string().uuid().nullable().default(null),
+    offerRevision: z.number().int().positive().nullable().default(null),
   })
   .superRefine((i, ctx) => {
     const given = [i.unit, i.packUnits, i.shareUnits].filter((v) => v !== null);
@@ -53,6 +55,8 @@ export const orderInput = z
   .object({
     name: text(80),
     store: text(80),
+    retailerId: z.string().trim().max(40).nullable().default(null),
+    locationId: z.string().uuid().nullable().default(null),
     kind: z.enum(["community", "quick"]).default("community"),
     visibility: z.enum(["public", "private"]).default("public"),
     deadline: z.iso.datetime({ offset: true }),
@@ -87,6 +91,11 @@ export const orderInput = z
       ctx.addIssue({
         code: "custom",
         message: "Provide both pickup coordinates or neither.",
+      });
+    if ((b.retailerId === null) !== (b.locationId === null))
+      ctx.addIssue({
+        code: "custom",
+        message: "Choose both a store and branch.",
       });
   });
 export const claimsInput = z
@@ -216,6 +225,8 @@ export interface OrderSummary {
   id: string;
   name: string;
   store: string;
+  retailerId?: string | null;
+  locationId?: string | null;
   kind: "community" | "quick";
   visibility: "public" | "private";
   status: Status;
@@ -244,7 +255,9 @@ export interface OrderSummary {
     priceCents: number;
     sharesPerPack: number;
     unit: string | null;
+    priceSource?: "legacy" | "manual" | "demo" | "retailer";
   }[];
+  demoPrices?: boolean;
   cadence: "once" | "weekly" | "monthly";
   revision: number;
 }
@@ -278,6 +291,48 @@ export interface Item {
   packUnits: number | null;
   shareUnits: number | null;
   catalogKey: string | null;
+  offerId: string | null;
+  offerRevision: number | null;
+  priceSource?: "legacy" | "manual" | "demo" | "retailer";
+}
+export interface Retailer {
+  id: string;
+  name: string;
+  country: string;
+  locationCount: number;
+}
+export interface StoreLocation {
+  id: string;
+  retailerId: string;
+  name: string;
+  address: string;
+  city: string;
+  region: string;
+  channel: string;
+  verifiedAt: string | null;
+}
+export interface CatalogueResult {
+  id: string;
+  offerId: string;
+  revision: number;
+  retailerId: string;
+  locationId: string;
+  name: string;
+  brand: string | null;
+  category: string;
+  packLabel: string;
+  unit: string | null;
+  packUnits: number | null;
+  unitDetail: string | null;
+  priceCents: number;
+  priceBasis: "pack" | "each" | "100g" | "kg" | "100ml" | "litre";
+  availability: "unknown" | "available" | "unavailable";
+  observedAt: string | null;
+  priceSource: "demo" | "retailer";
+}
+export interface CataloguePage {
+  items: CatalogueResult[];
+  nextCursor: string | null;
 }
 export interface Claim {
   itemId: string;
@@ -480,6 +535,7 @@ export const CATEGORIES = [
 
 /** "1 box", "6 boxes": units are stored in the singular. */
 export const plural = (n: number, unit: string): string => {
+  if (["g", "kg", "mL", "L"].includes(unit)) return `${n} ${unit}`;
   if (n === 1) return `${n} ${unit}`;
   if (/(s|x|ch|sh)$/.test(unit)) return `${n} ${unit}es`;
   if (/[^aeiou]y$/.test(unit)) return `${n} ${unit.slice(0, -1)}ies`;
@@ -810,7 +866,9 @@ export const CATALOG: CatalogItem[] = [
 
 /** Default member instructions for handing out sealed units. */
 export const portioningFor = (shareUnits: number, unit: string) =>
-  `Give ${plural(shareUnits, unit)} per share. Don’t open the packaging.`;
+  unit === "g" || unit === "mL"
+    ? `Measure ${plural(shareUnits, unit)} per share into clean containers. Confirm the purchased quantity.`
+    : `Give ${plural(shareUnits, unit)} per share. Don’t open the packaging.`;
 
 /** Builds the item fields the API needs from a pack and share size. */
 export const itemFromUnits = (b: {
@@ -825,6 +883,8 @@ export const itemFromUnits = (b: {
   packCount: number;
   storage: string;
   catalogKey?: string | null;
+  offerId?: string | null;
+  offerRevision?: number | null;
 }): ItemInput => ({
   name: b.name,
   category: b.category,
@@ -832,6 +892,8 @@ export const itemFromUnits = (b: {
   packUnits: b.packUnits,
   shareUnits: b.shareUnits,
   catalogKey: b.catalogKey ?? null,
+  offerId: b.offerId ?? null,
+  offerRevision: b.offerRevision ?? null,
   packLabel:
     `${plural(b.packUnits, b.unit)}${b.unitDetail ? ` (${b.unitDetail})` : ""}`.slice(
       0,

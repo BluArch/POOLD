@@ -549,6 +549,8 @@ function AddItemForm({
         value={draft}
         onChange={setDraft}
         initialSearch={initialSearch}
+        retailerId={v.order.retailerId ?? null}
+        locationId={v.order.locationId ?? null}
       />
       <ErrorText message={a.error} />
       <Button
@@ -825,6 +827,7 @@ function ShopItem({
       <Text style={styles.muted}>
         {i.claimed} share{i.claimed === 1 ? "" : "s"} committed ·{" "}
         {money(i.priceCents)} per pack
+        {i.priceSource === "demo" ? " · class-project demo estimate" : ""}
         {!i.available ? " · Unavailable" : ""}
       </Text>
       {i.shortfall > 0 && i.available && !readOnly && (

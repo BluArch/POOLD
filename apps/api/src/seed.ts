@@ -125,6 +125,8 @@ export async function seed(db: Pool) {
         {
           name,
           store,
+          retailerId: null,
+          locationId: null,
           kind,
           visibility: "public",
           maxMembers: 6,

@@ -1,5 +1,5 @@
 import { palette as P } from "../theme";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View, Text, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -7,6 +7,8 @@ import {
   CATEGORIES,
   type CatalogItem,
   type ItemInput,
+  type CatalogueResult,
+  type CataloguePage,
   itemFromUnits,
   plural,
   shareSizes,
@@ -16,10 +18,15 @@ import { Field, CurrencyField, Choice, styles } from "./ui";
 import { Collapsible, QuantityStepper } from "./Sections";
 import { ItemIcon } from "./ItemIcon";
 import { Select } from "./Pickers";
+import { api } from "../api";
 
 /** What the organizer edits. Everything else is worked out from this. */
 export interface ItemDraft {
   catalogKey: string | null;
+  offerId: string | null;
+  offerRevision: number | null;
+  observedAt: string | null;
+  priceSource: "manual" | "legacy" | "demo" | "retailer";
   name: string;
   category: string;
   /** Singular name of one sealed unit, e.g. "can". */
@@ -37,6 +44,10 @@ export interface ItemDraft {
 
 export const emptyDraft = (): ItemDraft => ({
   catalogKey: null,
+  offerId: null,
+  offerRevision: null,
+  observedAt: null,
+  priceSource: "manual",
   name: "",
   category: "",
   unit: "",
@@ -52,6 +63,10 @@ export const emptyDraft = (): ItemDraft => ({
 
 export const draftFromCatalog = (c: CatalogItem): ItemDraft => ({
   catalogKey: c.key,
+  offerId: null,
+  offerRevision: null,
+  observedAt: null,
+  priceSource: "legacy",
   name: c.name,
   category: c.category,
   unit: c.unit,
@@ -66,11 +81,17 @@ export const draftFromCatalog = (c: CatalogItem): ItemDraft => ({
 });
 
 /** Turns a saved item back into an editable draft (older items are parsed from their labels). */
-export const draftFromItem = (i: ItemInput): ItemDraft => {
+export const draftFromItem = (
+  i: ItemInput & { priceSource?: ItemDraft["priceSource"] },
+): ItemDraft => {
   const c = CATALOG.find((x) => x.key === i.catalogKey);
   if (i.unit && i.packUnits && i.shareUnits)
     return {
       catalogKey: i.catalogKey ?? null,
+      offerId: i.offerId ?? null,
+      offerRevision: i.offerRevision ?? null,
+      observedAt: null,
+      priceSource: i.priceSource ?? (i.catalogKey ? "legacy" : "manual"),
       name: i.name,
       category: i.category,
       unit: i.unit,
@@ -97,6 +118,10 @@ export const draftFromItem = (i: ItemInput): ItemDraft => {
     Number(p[1]) / Number(s[1]) === i.sharesPerPack;
   return {
     catalogKey: null,
+    offerId: null,
+    offerRevision: null,
+    observedAt: null,
+    priceSource: i.priceSource ?? "manual",
     name: i.name,
     category: i.category,
     unit: sameUnit ? p![2].replace(/s$/, "") : "share",
@@ -142,7 +167,26 @@ export const draftToInput = (d: ItemDraft): ItemInput =>
     packCount: d.packCount,
     storage: d.storage.trim(),
     catalogKey: d.catalogKey,
+    offerId: d.offerId,
+    offerRevision: d.offerRevision,
   });
+
+export const draftFromOffer = (o: CatalogueResult): ItemDraft => ({
+  ...emptyDraft(),
+  offerId: o.offerId,
+  offerRevision: o.revision,
+  observedAt: o.observedAt,
+  priceSource: o.priceSource,
+  name: o.name,
+  category: o.category,
+  unit: o.unit ?? "each",
+  unitDetail: o.unitDetail ?? "",
+  packUnits: o.packUnits ?? 1,
+  shareUnits:
+    o.unit === "g" || o.unit === "mL" ? Math.min(100, o.packUnits ?? 100) : 1,
+  priceCents: o.priceCents,
+  chosen: true,
+});
 
 /** One-line description of a share, e.g. "1 share = 4 boxes (200 g each)". */
 export const shareSummary = (d: ItemDraft) =>
@@ -156,23 +200,90 @@ export function ItemEditor({
   onChange,
   title,
   initialSearch = "",
+  retailerId = null,
+  locationId = null,
 }: {
   value: ItemDraft;
   onChange: (d: ItemDraft) => void;
   title: string;
   initialSearch?: string;
+  retailerId?: string | null;
+  locationId?: string | null;
 }) {
   const [search, setSearch] = useState(initialSearch);
+  const [results, setResults] = useState<CatalogueResult[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const searchVersion = useRef(0);
+  useEffect(() => {
+    searchVersion.current += 1;
+    setResults([]);
+    setCursor(null);
+    setSearchError("");
+    if (!locationId || !retailerId || d.chosen) {
+      setBusy(false);
+      return;
+    }
+    let current = true;
+    setBusy(true);
+    setResults([]);
+    setCursor(null);
+    const timer = setTimeout(() => {
+      void api<CataloguePage>(
+        `/catalogue/products?retailerId=${encodeURIComponent(retailerId)}&locationId=${encodeURIComponent(locationId)}&query=${encodeURIComponent(search.trim())}`,
+      )
+        .then((page) => {
+          if (current) {
+            setResults(page.items);
+            setCursor(page.nextCursor);
+            setSearchError("");
+          }
+        })
+        .catch((e) => {
+          if (current)
+            setSearchError(e instanceof Error ? e.message : "Search failed.");
+        })
+        .finally(() => {
+          if (current) setBusy(false);
+        });
+    }, 250);
+    return () => {
+      current = false;
+      searchVersion.current += 1;
+      clearTimeout(timer);
+    };
+  }, [retailerId, locationId, search, d.chosen]);
+  const loadMore = async () => {
+    if (!cursor || busy || !retailerId || !locationId) return;
+    const version = searchVersion.current;
+    setBusy(true);
+    try {
+      const page = await api<CataloguePage>(
+        `/catalogue/products?retailerId=${encodeURIComponent(retailerId)}&locationId=${encodeURIComponent(locationId)}&query=${encodeURIComponent(search.trim())}&cursor=${cursor}`,
+      );
+      if (version !== searchVersion.current) return;
+      setResults((current) => [...current, ...page.items]);
+      setCursor(page.nextCursor);
+    } catch (e) {
+      if (version === searchVersion.current)
+        setSearchError(e instanceof Error ? e.message : "Search failed.");
+    } finally {
+      if (version === searchVersion.current) setBusy(false);
+    }
+  };
   const set = (change: Partial<ItemDraft>) => onChange({ ...d, ...change });
 
   if (!d.chosen) {
-    const q = search.trim().toLowerCase();
-    const matches = CATALOG.filter(
-      (c) =>
-        !q ||
-        c.name.toLowerCase().includes(q) ||
-        c.category.toLowerCase().includes(q),
-    );
+    const query = search.trim().toLowerCase();
+    const legacyMatches = !retailerId
+      ? CATALOG.filter(
+          (item) =>
+            !query ||
+            item.name.toLowerCase().includes(query) ||
+            item.category.toLowerCase().includes(query),
+        )
+      : [];
     return (
       <View style={{ gap: 10 }}>
         <Text style={styles.h3}>{title}</Text>
@@ -183,8 +294,8 @@ export function ItemEditor({
           placeholder="Kraft Dinner, toothpaste, cans…"
         />
         <Text style={styles.muted}>
-          These come in sealed packs, so shares never need opening. Prices fill
-          in automatically.
+          Branch catalogue prices are estimates until checked at purchase. Add
+          an item manually if it is missing.
         </Text>
         <View
           style={{
@@ -194,12 +305,27 @@ export function ItemEditor({
             overflow: "hidden",
           }}
         >
-          {matches.slice(0, 12).map((c, i) => (
+          {legacyMatches.map((item) => (
             <Pressable
-              key={c.key}
+              key={item.key}
+              accessibilityRole="button"
+              accessibilityLabel={`Choose ${item.name}`}
+              onPress={() => onChange(draftFromCatalog(item))}
+              style={{ padding: 14, gap: 2 }}
+            >
+              <Text style={styles.h3}>{item.name}</Text>
+              <Text style={styles.muted}>
+                {plural(item.packUnits, item.unit)} · {money(item.priceCents)} ·{" "}
+                Older catalogue estimate
+              </Text>
+            </Pressable>
+          ))}
+          {results.map((c, i) => (
+            <Pressable
+              key={c.offerId}
               accessibilityRole="button"
               accessibilityLabel={`Choose ${c.name}`}
-              onPress={() => onChange(draftFromCatalog(c))}
+              onPress={() => onChange(draftFromOffer(c))}
               style={({ pressed }) => ({
                 padding: 14,
                 gap: 2,
@@ -208,20 +334,51 @@ export function ItemEditor({
                 borderTopColor: P.line,
               })}
             >
-              <View style={styles.row}>
-                <ItemIcon item={c} size={26} />
-                <Text style={[styles.h3, { flex: 1 }]}>{c.name}</Text>
-              </View>
+              <Text style={styles.h3}>
+                {c.brand ? `${c.brand} · ` : ""}
+                {c.name}
+              </Text>
               <Text style={styles.muted}>
-                {plural(c.packUnits, c.unit)} ({c.unitDetail}) ·{" "}
-                {money(c.priceCents)} · {c.category}
+                {c.packLabel} · {money(c.priceCents)} · {c.category} ·{" "}
+                {c.availability === "unknown"
+                  ? "Stock unconfirmed"
+                  : "Listed available"}
+              </Text>
+              <Text style={styles.muted}>
+                {c.priceSource === "demo"
+                  ? "Class-project demo estimate · stock unverified"
+                  : c.observedAt
+                    ? `Price checked ${new Date(c.observedAt).toLocaleDateString("en-CA")}`
+                    : "Price check unavailable"}
               </Text>
             </Pressable>
           ))}
-          {matches.length === 0 && (
-            <Text style={[styles.muted, { padding: 14 }]}>
-              No match in the list.
-            </Text>
+          {busy && (
+            <Text style={[styles.muted, { padding: 14 }]}>Searching…</Text>
+          )}
+          {!!searchError && (
+            <Text style={[styles.muted, { padding: 14 }]}>{searchError}</Text>
+          )}
+          {!busy &&
+            !searchError &&
+            results.length === 0 &&
+            legacyMatches.length === 0 && (
+              <Text style={[styles.muted, { padding: 14 }]}>
+                {!retailerId
+                  ? "No match in the list."
+                  : locationId
+                    ? "No eligible products loaded for this branch."
+                    : "Choose a branch to search its catalogue."}
+              </Text>
+            )}
+          {!!cursor && (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => void loadMore()}
+              style={{ padding: 14 }}
+            >
+              <Text style={styles.text}>Load more</Text>
+            </Pressable>
           )}
           <Pressable
             accessibilityRole="button"
@@ -252,8 +409,13 @@ export function ItemEditor({
     );
   }
 
-  const fromCatalog = !!d.catalogKey;
-  const sizes = d.packUnits && d.packUnits > 0 ? shareSizes(d.packUnits) : [];
+  const fromCatalog = !!d.catalogKey || !!d.offerId;
+  const sizes =
+    d.packUnits && d.packUnits > 0
+      ? shareSizes(d.packUnits).filter((n) =>
+          d.unit === "g" || d.unit === "mL" ? n >= 25 : true,
+        )
+      : [];
   const sharesPerPack =
     d.packUnits && d.shareUnits && d.packUnits % d.shareUnits === 0
       ? d.packUnits / d.shareUnits
@@ -286,10 +448,18 @@ export function ItemEditor({
         <View style={styles.note}>
           <Text style={styles.h3}>{d.name}</Text>
           <Text style={styles.text}>
-            One pack: {plural(d.packUnits!, d.unit)} ({d.unitDetail}) ·{" "}
-            {money(d.priceCents)}
+            One pack: {plural(d.packUnits!, d.unit)}
+            {d.unitDetail ? ` (${d.unitDetail})` : ""} · {money(d.priceCents)}
           </Text>
-          <Text style={styles.muted}>{d.category} · Costco price</Text>
+          <Text style={styles.muted}>
+            {d.category} ·{" "}
+            {d.priceSource === "demo"
+              ? "class-project demo estimate"
+              : d.offerId
+                ? "branch price estimate"
+                : "older catalogue estimate"}{" "}
+            · savings not verified
+          </Text>
         </View>
       ) : (
         <>
@@ -407,7 +577,19 @@ export function ItemEditor({
           <CurrencyField
             label="Price for one pack (CAD)"
             valueCents={d.priceCents || null}
-            onChangeCents={(c) => set({ priceCents: c ?? 0 })}
+            onChangeCents={(c) =>
+              set({
+                priceCents: c ?? 0,
+                ...(d.offerId
+                  ? {
+                      offerId: null,
+                      offerRevision: null,
+                      observedAt: null,
+                      priceSource: "manual",
+                    }
+                  : {}),
+              })
+            }
           />
           <Field
             label="Storage advice for members"

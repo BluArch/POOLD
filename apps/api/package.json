@@ -14,7 +14,10 @@
     "migrate:host": "node dist/migrate.js",
     "start:host": "node dist/index.js",
     "test": "tsx --env-file=../../.env --test --test-concurrency=1 test/*.test.ts",
-    "mail:verify": "tsx --env-file=../../.env src/check-mail.ts"
+    "mail:verify": "tsx --env-file=../../.env src/check-mail.ts",
+    "catalogue:import": "tsx --env-file=../../.env src/import-catalogue.ts",
+    "catalogue:status": "tsx --env-file=../../.env src/catalogue-status.ts",
+    "catalogue:seed-demo": "tsx --env-file=../../.env src/seed-demo-catalogue.ts"
   },
   "dependencies": {
     "@poold/contracts": "*",

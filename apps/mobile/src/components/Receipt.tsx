@@ -71,6 +71,9 @@ export function ShareItemCard({
             </Text>
             {saving > 0 && <Badge tone="good">{`Save ${money(saving)}`}</Badge>}
           </View>
+          {i.priceSource === "demo" && (
+            <Text style={styles.muted}>Class-project demo estimate</Text>
+          )}
         </View>
       </View>
       <ShareBar others={others} yours={quantity} total={total} />

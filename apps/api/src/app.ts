@@ -14,6 +14,7 @@ import { fulfillment } from "./fulfillment.js";
 import { payments } from "./payments.js";
 import { claims } from "./claims.js";
 import { orders } from "./orders.js";
+import { catalogue } from "./catalogue.js";
 import { errorHandler, RATE_LIMIT_ERROR } from "./errors.js";
 /**
  * When the API also serves the web app (hosting, or the phone demo link), the
@@ -129,6 +130,7 @@ export function createApp(
   app.use("/api", payments(db));
   app.use("/api", claims(db));
   app.use("/api", orders(db));
+  app.use("/api", catalogue(db));
   if (demo && !production)
     app.get("/api/dev/outbox", async (_req, res) => {
       try {
