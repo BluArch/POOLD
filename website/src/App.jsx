@@ -367,7 +367,7 @@ function App() {
               target="_blank"
               rel="noopener noreferrer"
             >
-              Install the MVP
+              Try the MVP
               <span>↗</span>
             </a>
 
