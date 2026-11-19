@@ -869,3 +869,21 @@ footer {
     grid-template-columns: 1fr;
   }
 }
+
+:root {
+  --green: #879b79;
+  --dark-green: #65745d;
+  --cream: #f4ede1;
+  --orange: #e84b2c;
+
+  /* darker orange for text directly on green */
+  --orange-dark: #54170d;
+
+  --yellow: #f8e99b;
+  --black: #161616;
+  --white: #ffffff;
+}
+
+.intro .section-label {
+  color: var(--orange-dark);
+}
