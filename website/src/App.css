@@ -299,13 +299,28 @@ footer,
   min-height: 210px;
 } */
 
-.timeline-step {
+/* .timeline-step {
   position: relative;
   display: grid;
   grid-template-columns: 1fr 90px 1fr;
   align-items: center;
   min-height: 210px;
   padding: 16px 0;
+} */
+
+.timeline-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 90px 1fr;
+  align-items: center;
+
+  min-height: 0;
+  padding: 0;
+  margin-bottom: 4px;
+}
+
+.timeline-step:last-child {
+  margin-bottom: 0;
 }
 
 .timeline-card {
