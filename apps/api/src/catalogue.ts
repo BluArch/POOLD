@@ -6,6 +6,8 @@ import type { DB } from "./db.js";
 import { first, rows, iso } from "./db.js";
 import { fail } from "./errors.js";
 
+const COSTCO_ONLINE_REFERENCE = "costco-online-reference";
+
 const pageQuery = z.object({
   retailerId: z.string().max(40),
   locationId: z.string().uuid(),
@@ -70,14 +72,22 @@ export function catalogue(db: Pool) {
       "l.id=?",
       "s.retailer_id=?",
       "o.active=TRUE",
-      "o.orderable=TRUE",
+      `(o.orderable=TRUE OR (
+        s.retailer_id='costco' AND s.access_method=? AND l.channel='warehouse'
+        AND o.seller_key='first-party' AND o.price_basis='pack'
+        AND p.category IS NOT NULL
+      ))`,
       "o.availability<>'unavailable'",
       "o.price_cents IS NOT NULL",
       "p.active=TRUE",
       "p.unit IS NOT NULL",
       "p.pack_units IS NOT NULL",
     ];
-    const params: unknown[] = [q.locationId, q.retailerId];
+    const params: unknown[] = [
+      q.locationId,
+      q.retailerId,
+      COSTCO_ONLINE_REFERENCE,
+    ];
     if (q.category) {
       clauses.push("p.category=?");
       params.push(q.category);
@@ -116,8 +126,11 @@ export function catalogue(db: Pool) {
     res.json({
       items: page.map((x) => ({
         id: x.id,
-        offerId: x.offer_id,
-        revision: Number(x.revision),
+        // Online prices can prefill a manual estimate. A local offer can be
+        // linked only when the branch price and terms have been verified.
+        offerId: x.access_method === COSTCO_ONLINE_REFERENCE ? null : x.offer_id,
+        revision:
+          x.access_method === COSTCO_ONLINE_REFERENCE ? null : Number(x.revision),
         retailerId: x.retailer_id,
         locationId: x.location_id,
         name: x.name,
@@ -136,7 +149,12 @@ export function catalogue(db: Pool) {
         priceBasis: x.price_basis,
         availability: x.availability,
         observedAt: x.observed_at ? iso(x.observed_at) : null,
-        priceSource: x.access_method === "synthetic-demo" ? "demo" : "retailer",
+        priceSource:
+          x.access_method === COSTCO_ONLINE_REFERENCE
+            ? "online-reference"
+            : x.access_method === "synthetic-demo"
+              ? "demo"
+              : "retailer",
       })),
       nextCursor: data.length > q.limit ? page.at(-1)!.offer_id : null,
     });
@@ -255,6 +273,7 @@ export async function resolveItems(
       !offer.active ||
       !offer.location_active ||
       !offer.product_active ||
+      offer.access_method === COSTCO_ONLINE_REFERENCE ||
       !offer.orderable ||
       offer.availability === "unavailable" ||
       !offer.tax_included ||

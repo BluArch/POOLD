@@ -155,3 +155,86 @@ test("branch catalogue search and linked item snapshots reject stale or cross-br
     }
   }
 });
+
+test("Costco online reference prices prefill a manual estimate and only buyers see markup", async () => {
+  const s = await setup();
+  const source = randomUUID(),
+    product = randomUUID(),
+    offer = randomUUID();
+  const locationId = "00000000-0000-4000-8000-000000000256";
+  try {
+    await execute(
+      s.db,
+      `INSERT INTO catalogue_sources(id,retailer_id,name,channel,access_method,coverage_note,rights_note)
+      VALUES(?,'costco',?,'warehouse','costco-online-reference','web estimate','test only')`,
+      [source, source],
+    );
+    await execute(
+      s.db,
+      `INSERT INTO catalogue_products(id,source_id,source_product_id,name,source_category,category,pack_label,unit,pack_units,unit_detail)
+      VALUES(?,?,'TEST-REF-8827199','Fixture air spray','Household','Household','4 cans','can',4,'250 g each')`,
+      [product, source],
+    );
+    await execute(
+      s.db,
+      `INSERT INTO store_offers(id,source_id,product_id,location_id,source_offer_id,price_basis,price_cents,observed_at)
+      VALUES(?,?,?,?,'TEST-REF-8827199','pack',1699,UTC_TIMESTAMP(3) - INTERVAL 30 DAY)`,
+      [offer, source, product, locationId],
+    );
+
+    const page = await s.call(
+      `/catalogue/products?retailerId=costco&locationId=${locationId}&query=TEST-REF-8827199`,
+    );
+    assert.equal(page.status, 200);
+    const [picked] = page.body.items;
+    assert.equal(picked.id, product);
+    assert.equal(picked.priceCents, 1699);
+    assert.equal(picked.priceSource, "online-reference");
+    assert.equal(picked.availability, "unknown");
+    assert.equal(picked.offerId, null);
+    assert.equal(picked.revision, null);
+    const selected = itemFromUnits({
+      name: picked.name,
+      category: picked.category,
+      unit: picked.unit,
+      packUnits: picked.packUnits,
+      shareUnits: 1,
+      priceCents: picked.priceCents,
+      packCount: 1,
+      storage: "",
+      offerId: picked.offerId,
+      offerRevision: picked.revision,
+    });
+    const body = draft({ retailerId: "costco", locationId, items: [selected] });
+    const invalidLink = await s.call(
+      "/orders",
+      "POST",
+      { ...body, items: [{ ...selected, offerId: offer, offerRevision: 1 }] },
+      s.tokens.maya,
+    );
+    assert.equal(invalidLink.status, 409);
+
+    const id = await s.create(body);
+    await s.publish(id);
+    const organizer = await s.call(
+      `/orders/${id}`,
+      "GET",
+      undefined,
+      s.tokens.maya,
+    );
+    const buyer = await s.call(`/orders/${id}`, "GET", undefined, s.tokens.jordan);
+    assert.equal(organizer.body.items[0].priceCents, 1699);
+    assert.equal(organizer.body.items[0].shareEstimateCents, 425);
+    assert.equal(buyer.body.items[0].shareEstimateCents, 489);
+  } finally {
+    await s.close();
+    const db = database(process.env.TEST_DATABASE_URL);
+    try {
+      await execute(db, "DELETE FROM store_offers WHERE id=?", [offer]);
+      await execute(db, "DELETE FROM catalogue_products WHERE id=?", [product]);
+      await execute(db, "DELETE FROM catalogue_sources WHERE id=?", [source]);
+    } finally {
+      await db.end();
+    }
+  }
+});

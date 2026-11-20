@@ -26,7 +26,7 @@ export interface ItemDraft {
   offerId: string | null;
   offerRevision: number | null;
   observedAt: string | null;
-  priceSource: "manual" | "legacy" | "demo" | "retailer";
+  priceSource: "manual" | "legacy" | CatalogueResult["priceSource"];
   name: string;
   category: string;
   /** Singular name of one sealed unit, e.g. "can". */
@@ -405,7 +405,8 @@ export function ItemEditor({
     );
   }
 
-  const fromCatalog = !!d.catalogKey || !!d.offerId;
+  const onlineReference = d.priceSource === "online-reference";
+  const fromCatalog = !!d.catalogKey || !!d.offerId || onlineReference;
   const sizes =
     d.packUnits && d.packUnits > 0
       ? shareSizes(d.packUnits).filter((n) =>
@@ -451,9 +452,11 @@ export function ItemEditor({
             {d.category} ·{" "}
             {d.priceSource === "demo"
               ? "class-project demo estimate"
-              : d.offerId
-                ? "branch price estimate"
-                : "older catalogue estimate"}{" "}
+              : onlineReference
+                ? "Costco.ca price estimate. Check the warehouse price and availability"
+                : d.offerId
+                  ? "branch price estimate"
+                  : "older catalogue estimate"}{" "}
             · savings not verified
           </Text>
         </View>
@@ -576,7 +579,7 @@ export function ItemEditor({
             onChangeCents={(c) =>
               set({
                 priceCents: c ?? 0,
-                ...(d.offerId
+                ...(d.offerId || onlineReference
                   ? {
                       offerId: null,
                       offerRevision: null,

@@ -13,7 +13,6 @@ import {
   type ProductRequest,
   money,
   describeShare,
-  withMarkup,
   REWARD_MIN_CENTS,
 } from "@poold/contracts";
 import { api, post } from "../api";
@@ -1334,8 +1333,7 @@ function DraftReview({
               <Text style={styles.h3}>{i.name}</Text>
             </View>
             <Text style={styles.muted}>
-              {describeShare(i).share} · {money(i.shareCostCents)} at Costco ·
-              buyers pay {money(withMarkup(i.shareCostCents))}
+              {describeShare(i).share} · {money(i.shareCostCents)} at {o.store}
             </Text>
             <Text style={styles.muted}>
               {describeShare(i).pack} · up to {i.packCount * i.sharesPerPack}{" "}

@@ -315,8 +315,8 @@ export interface StoreLocation {
 }
 export interface CatalogueResult {
   id: string;
-  offerId: string;
-  revision: number;
+  offerId: string | null;
+  revision: number | null;
   retailerId: string;
   locationId: string;
   name: string;
@@ -330,7 +330,7 @@ export interface CatalogueResult {
   priceBasis: "pack" | "each" | "100g" | "kg" | "100ml" | "litre";
   availability: "unknown" | "available" | "unavailable";
   observedAt: string | null;
-  priceSource: "demo" | "retailer";
+  priceSource: "demo" | "retailer" | "online-reference";
 }
 export interface CataloguePage {
   items: CatalogueResult[];
