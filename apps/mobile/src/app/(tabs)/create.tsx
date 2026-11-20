@@ -157,6 +157,14 @@ function DraftForm({ id }: { id?: string }) {
 
   const update = (n: number, d: ItemDraft) =>
     setItems(items.map((v, i) => (i === n ? d : v)));
+  const resetCatalogueItems = () =>
+    setItems((current) =>
+      current.map((item) =>
+        item.offerId || item.catalogKey || item.priceSource === "online-reference"
+          ? emptyDraft()
+          : item,
+      ),
+    );
   const problems = items.flatMap((d, n) =>
     draftProblems(d).map((p) => `Item ${n + 1}: ${p}`),
   );
@@ -240,11 +248,7 @@ function DraftForm({ id }: { id?: string }) {
             setStore(next);
             setRetailerId(STORE_IDS[next] ?? null);
             setLocationId(null);
-            setItems((current) =>
-              current.map((item) =>
-                item.offerId || item.catalogKey ? emptyDraft() : item,
-              ),
-            );
+            resetCatalogueItems();
           }}
           allowOther
         />
@@ -259,11 +263,7 @@ function DraftForm({ id }: { id?: string }) {
               setLocationId(
                 branches.find((branch) => branch.name === next)?.id ?? null,
               );
-              setItems((current) =>
-                current.map((item) =>
-                  item.offerId || item.catalogKey ? emptyDraft() : item,
-                ),
-              );
+              resetCatalogueItems();
             }}
           />
         )}
