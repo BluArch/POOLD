@@ -202,7 +202,7 @@ export const shareSummary = (d: ItemDraft) =>
     ? `1 share = ${plural(d.shareUnits, d.unit)}${d.unitDetail ? ` (${d.unitDetail})` : ""}`
     : "";
 
-function OutOfStockTag() {
+export function OutOfStockTag() {
   return (
     <View
       style={{
