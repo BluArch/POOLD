@@ -249,6 +249,12 @@ export function fulfillment(db: Pool) {
           "FROZEN_BASKET",
           "Closed purchases can change only through payment recovery; ordinary item edits remain closed.",
         );
+      if (o.status === "shopping" && b.available === true && !it.available)
+        fail(
+          409,
+          "ALREADY_REFUNDED",
+          "Buyers were already told this item is out of stock and refunded, so it can’t go back on the list.",
+        );
       const available =
           b.shortfallDecision === "skip"
             ? false
