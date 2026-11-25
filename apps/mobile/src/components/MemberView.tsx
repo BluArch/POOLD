@@ -355,15 +355,17 @@ function GroupRequests({
     `/orders/${v.order.id}/requests${suffix}`,
   );
   const open = r.data?.filter((q) => q.status === "open").length ?? 0;
+  // Always visible (not a dropdown), so buyers notice they can ask for items.
   return (
-    <Collapsible
-      title="Want something else?"
-      summary={
-        open
-          ? `${open} request${open === 1 ? "" : "s"} sent`
-          : "Ask the organizer to add an item"
-      }
-    >
+    <View style={[styles.card, { gap: 12 }]}>
+      <View style={{ gap: 2 }}>
+        <Text style={styles.h3}>Want something else?</Text>
+        <Text style={styles.muted}>
+          {open
+            ? `${open} request${open === 1 ? "" : "s"} sent`
+            : "Ask the organizer to add an item"}
+        </Text>
+      </View>
       <RequestForm
         path={`/orders/${v.order.id}/requests${suffix}`}
         onDone={r.refresh}
@@ -378,7 +380,7 @@ function GroupRequests({
           showTarget={false}
         />
       ))}
-    </Collapsible>
+    </View>
   );
 }
 
