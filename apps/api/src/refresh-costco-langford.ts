@@ -3,6 +3,21 @@ import { fileURLToPath } from "node:url";
 import type { Pool } from "mysql2/promise";
 import { z } from "zod";
 import { database, execute, rows, transaction } from "./db.js";
+import {
+  costcoProductId,
+  scrapeCostcoLangford,
+} from "./scrape-costco-langford.js";
+
+const langfordReferenceOffers = `
+  FROM store_offers o
+  JOIN catalogue_products p ON p.id=o.product_id AND p.source_id=o.source_id
+  JOIN catalogue_sources s ON s.id=o.source_id
+  JOIN store_locations l ON l.id=o.location_id
+  WHERE s.retailer_id='costco' AND s.name='Costco.ca shelf-stable price reference'
+    AND s.access_method='costco-online-reference' AND l.retailer_id='costco'
+    AND l.source_id='256' AND l.channel='warehouse' AND l.active
+    AND p.active AND o.active AND o.seller_key='first-party'
+    AND o.currency='CAD' AND o.price_basis='pack'`;
 
 const snapshotSchema = z.strictObject({
   source: z.literal("costco.ca"),
@@ -99,15 +114,7 @@ export async function refreshCostcoLangford(db: Pool, input: unknown) {
       `
       SELECT o.id, p.source_product_id, o.price_cents, o.observed_at,
         o.availability, o.stock_observed_at
-      FROM store_offers o
-      JOIN catalogue_products p ON p.id=o.product_id AND p.source_id=o.source_id
-      JOIN catalogue_sources s ON s.id=o.source_id
-      JOIN store_locations l ON l.id=o.location_id
-      WHERE s.retailer_id='costco' AND s.name='Costco.ca shelf-stable price reference'
-        AND s.access_method='costco-online-reference' AND l.retailer_id='costco'
-        AND l.source_id='256' AND l.channel='warehouse' AND l.active
-        AND p.active AND o.active AND o.seller_key='first-party'
-        AND o.currency='CAD' AND o.price_basis='pack'
+      ${langfordReferenceOffers}
       FOR UPDATE`,
     );
     let matched = 0;
@@ -182,22 +189,68 @@ export async function refreshCostcoLangford(db: Pool, input: unknown) {
   });
 }
 
+async function loadCostcoProductIds(db: Pool) {
+  const offers = await rows(
+    db,
+    `
+    SELECT p.source_product_id, (
+      SELECT po.evidence FROM price_observations po
+      WHERE po.offer_id=o.id AND po.evidence LIKE 'https://www.costco.ca/p/-%'
+      ORDER BY po.observed_at DESC LIMIT 1
+    ) AS product_link
+    ${langfordReferenceOffers}`,
+  );
+  const productIds = new Map<string, string>();
+  for (const offer of offers) {
+    const productId = costcoProductId(offer.product_link);
+    if (!productId) continue;
+    if (
+      productIds.has(productId) &&
+      productIds.get(productId) !== offer.source_product_id
+    )
+      throw new Error(
+        `Costco product ID ${productId} maps to more than one item number.`,
+      );
+    productIds.set(productId, offer.source_product_id);
+  }
+  if (!productIds.size)
+    throw new Error(
+      "No active Langford references have a Costco product link.",
+    );
+  console.log(
+    `Found ${productIds.size} Costco links for ${offers.length} active Langford references.`,
+  );
+  return productIds;
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const url = process.env.COSTCO_LANGFORD_EXPORT_URL;
-  if (!url)
-    throw new Error(
-      "Set COSTCO_LANGFORD_EXPORT_URL to the authorized Costco export URL.",
-    );
-  const input = await downloadLangfordSnapshot(
-    url,
-    process.env.COSTCO_LANGFORD_EXPORT_TOKEN,
-  );
   const db = database();
   try {
-    console.log(
-      "Costco Langford refresh completed",
-      await refreshCostcoLangford(db, input),
-    );
+    const input = url
+      ? await downloadLangfordSnapshot(
+          url,
+          process.env.COSTCO_LANGFORD_EXPORT_TOKEN,
+        )
+      : await scrapeCostcoLangford(await loadCostcoProductIds(db));
+    if (process.argv.includes("--check")) {
+      const sample = snapshotSchema.parse(input).items;
+      console.log("Costco Langford dry run completed", {
+        matched: sample.length,
+        prices: sample.filter((item) => item.onlinePackPriceCents !== undefined)
+          .length,
+        inStock: sample.filter((item) => item.warehouseStock === "available")
+          .length,
+        outOfStock: sample.filter(
+          (item) => item.warehouseStock === "unavailable",
+        ).length,
+      });
+    } else {
+      console.log(
+        "Costco Langford refresh completed",
+        await refreshCostcoLangford(db, input),
+      );
+    }
   } finally {
     await db.end();
   }

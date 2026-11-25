@@ -51,9 +51,11 @@ No complete authorized feed or representative sample for these four sources has 
 
 ## Nightly Costco Langford refresh
 
-`render.costco.yaml` defines a separate Render cron service for 09:00 UTC daily, which is 2:00 a.m. Pacific time in Langford year-round. Render runs it independently of the web service. Apply the API's normal deployment first so migration 017 is present, then create the cron service from that Blueprint path on `main`. Set `DATABASE_URL`, the applicable `DATABASE_CA_CERT`, and `COSTCO_LANGFORD_EXPORT_URL` in Render. Set `COSTCO_LANGFORD_EXPORT_TOKEN` as a secret if the export requires a bearer token.
+`render.costco.yaml` defines a separate Render cron service for 09:00 UTC daily, which is 2:00 a.m. Pacific time in Langford year-round. `Dockerfile.costco` builds the worker with Chromium. Render runs it independently of the web service. Apply the API's normal deployment first so migration 017 is present. Set `DATABASE_URL` and the applicable `DATABASE_CA_CERT` in Render.
 
-The job reads an authorized HTTPS JSON export of Costco.ca observations, scoped to Langford warehouse 256. It expects the export to supply the observation timestamp, the Costco item number, and either the original online pack price in CAD cents, an explicit Langford stock status, or both. For example:
+The worker opens Costco.ca's public Grocery & Household category listings, selects Langford and the delivery postal code V9B 6A2, and checks each category with Costco's out-of-stock filter enabled. It matches the Costco product IDs in the imported catalogue's product links. It uses the online pack price and explicit Langford availability independently. Listings missing from the sweep keep their previous price and their stock expires after 26 hours. Run the command with `-- --check` for a read-only observation count.
+
+To use an HTTPS JSON export scoped to Langford warehouse 256, set `COSTCO_LANGFORD_EXPORT_URL` and, if required, `COSTCO_LANGFORD_EXPORT_TOKEN`. The export supplies the observation timestamp, Costco item number, and the original online pack price in CAD cents, an explicit Langford stock status, or both. For example:
 
 ```json
 {

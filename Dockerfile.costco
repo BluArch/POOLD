@@ -1,0 +1,15 @@
+FROM node:24-bookworm-slim AS node
+FROM mcr.microsoft.com/playwright:v1.61.1-noble
+COPY --from=node /usr/local/ /usr/local/
+
+WORKDIR /app
+COPY package.json package-lock.json tsconfig.base.json ./
+COPY packages/contracts ./packages/contracts
+COPY apps/api/package.json ./apps/api/package.json
+COPY apps/mobile/package.json ./apps/mobile/package.json
+RUN npm ci --include=dev --workspace @poold/api --workspace @poold/contracts --include-workspace-root
+COPY apps/api/src ./apps/api/src
+COPY apps/api/tsconfig.json ./apps/api/tsconfig.json
+RUN npm run build --workspace @poold/api
+
+CMD ["npm", "run", "catalogue:refresh-costco:host", "-w", "@poold/api"]

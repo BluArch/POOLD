@@ -4,7 +4,54 @@ import { randomUUID } from "node:crypto";
 import { itemFromUnits } from "@poold/contracts";
 import { database, execute, first } from "../src/db.js";
 import { refreshCostcoLangford } from "../src/refresh-costco-langford.js";
+import {
+  costcoProductId,
+  readCostcoTile,
+} from "../src/scrape-costco-langford.js";
 import { draft, setup } from "./helpers.js";
+
+test("Costco tiles use the online price and only explicit Langford stock", () => {
+  assert.equal(
+    costcoProductId("https://www.costco.ca/p/-/sample/4000111232"),
+    "4000111232",
+  );
+  assert.equal(
+    costcoProductId("https://example.com/p/-/sample/4000111232"),
+    null,
+  );
+  assert.deepEqual(
+    readCostcoTile({
+      price: "$1,234.56",
+      warehouse: "Buy in Warehouse\nIn Stock\nat Langford",
+      lines: [],
+    }),
+    {
+      onlinePackPriceCents: 123456,
+      warehouseStock: "available",
+    },
+  );
+  assert.deepEqual(
+    readCostcoTile({
+      price: "$19.99 – $24.99",
+      lines: ["Warehouse Only", "Out of Stock", "at Langford"],
+    }),
+    {
+      onlinePackPriceCents: undefined,
+      warehouseStock: "unavailable",
+    },
+  );
+  assert.deepEqual(
+    readCostcoTile({
+      price: "$16.99",
+      warehouse: "Out of Stock\nat Nanaimo",
+      lines: ["Delivery", "Out of Stock"],
+    }),
+    {
+      onlinePackPriceCents: 1699,
+      warehouseStock: undefined,
+    },
+  );
+});
 
 test("branch catalogue search and linked item snapshots reject stale or cross-branch offers", async () => {
   const s = await setup();

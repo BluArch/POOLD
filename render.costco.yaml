@@ -1,17 +1,14 @@
 services:
   - type: cron
     name: poold-costco-langford-refresh
-    runtime: node
+    runtime: docker
+    dockerfilePath: ./Dockerfile.costco
     branch: main
     region: oregon
     plan: 0.5c-512mb
     # Render uses UTC. Langford observes UTC-7 year-round.
     schedule: "0 9 * * *"
-    buildCommand: npm ci --include=dev && npm run build -w @poold/api
-    startCommand: npm run catalogue:refresh-costco:host -w @poold/api
     envVars:
-      - key: NODE_VERSION
-        value: "24"
       - key: NODE_ENV
         value: production
       - key: DATABASE_SSL
@@ -21,6 +18,4 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: DATABASE_CA_CERT
-        sync: false
-      - key: COSTCO_LANGFORD_EXPORT_URL
         sync: false
