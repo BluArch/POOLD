@@ -24,7 +24,7 @@ const kind = (message: string) =>
         bg: brand.greenSoft,
         fg: brand.greenDeep,
       }
-    : /cancel|unavailable|price changed/i.test(message)
+    : /cancel|unavailable|out of stock|price changed/i.test(message)
       ? { icon: "alert-circle-outline" as const, bg: "#FBE3E0", fg: P.beet }
       : {
           icon: "notifications-outline" as const,
