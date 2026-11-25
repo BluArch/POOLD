@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { setup, draft } from "./helpers.js";
+import { runJobs } from "../src/jobs.js";
 test("Phase D: lock, resolve shortfall, shop, pack, collect once, complete and repeat", async () => {
   const h = await setup();
   const { call, tokens: t } = h;
@@ -275,6 +276,93 @@ test("Phase D: unavailable items and changed prices invalidate estimates and not
         )
       ).status,
       200,
+    );
+  } finally {
+    await h.close();
+  }
+});
+test("Out of stock while shopping tells only that item's buyers about their refund", async () => {
+  const h = await setup();
+  const { call, tokens: t } = h;
+  try {
+    const input = draft();
+    input.items[0].priceCents = 100000;
+    input.items.push({
+      ...input.items[0],
+      name: "Rice",
+      category: "Pantry",
+      packLabel: "10 kg",
+      shareLabel: "5 kg",
+      sharesPerPack: 2,
+    });
+    const id = await h.create(input);
+    await h.publish(id);
+    const view = async (auth = t.maya) =>
+      (await call(`/orders/${id}`, "GET", undefined, auth)).body;
+    const v = await view();
+    const eggs = v.items.find((i: any) => i.name === "Eggs").id,
+      rice = v.items.find((i: any) => i.name === "Rice").id;
+    const claim = async (auth: string, itemId: string, quantity: number) =>
+      assert.equal(
+        (
+          await call(
+            `/orders/${id}/claims`,
+            "PUT",
+            {
+              revision: (await view(auth)).order.revision,
+              attending: true,
+              claims: [{ itemId, quantity }],
+            },
+            auth,
+          )
+        ).status,
+        200,
+      );
+    await claim(t.jordan, eggs, 2);
+    await claim(t.alex, rice, 2);
+    await claim(t.maya, eggs, 3);
+    await h.closeFunding(id);
+    assert.equal(
+      (
+        await call(
+          `/orders/${id}/status`,
+          "POST",
+          { status: "shopping" },
+          t.maya,
+        )
+      ).status,
+      200,
+    );
+    const change = (body: unknown) =>
+      call(`/orders/${id}/items/${eggs}`, "PATCH", body, t.maya);
+    const paid = async (auth: string) => (await view(auth)).mine.paidCents;
+    const jordanPaid = await paid(t.jordan),
+      alexPaid = await paid(t.alex);
+    assert.equal((await change({ available: false })).status, 200);
+    const about = async (auth: string) =>
+      (await call("/notifications", "GET", undefined, auth)).body
+        .map((n: any) => n.message)
+        .filter((m: string) => m.startsWith("Eggs is out of stock"));
+    const [jordan] = await about(t.jordan);
+    assert.match(
+      jordan,
+      /won’t be in your bag\. \$[\d,]+\.\d\d for your 2 shares is being refunded to your card\./,
+    );
+    // Alex only took rice, and Maya made the change herself.
+    assert.deepEqual(await about(t.alex), []);
+    assert.deepEqual(await about(t.maya), []);
+    // The payment job sends the queued refund: exactly what the notice said.
+    await runJobs(h.db, new Date());
+    const promised = Math.round(
+      Number(/\$([\d,]+\.\d\d) for/.exec(jordan)![1].replace(/,/g, "")) * 100,
+    );
+    assert.ok(promised > 0);
+    assert.equal(await paid(t.jordan), jordanPaid - promised);
+    assert.equal(await paid(t.alex), alexPaid);
+    // Buyers were refunded, so it can't quietly go back on the list.
+    assert.equal(
+      (await change({ available: true })).body.error.code,
+      "ALREADY_REFUNDED",
     );
   } finally {
     await h.close();
