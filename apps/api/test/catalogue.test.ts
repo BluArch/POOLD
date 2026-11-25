@@ -126,6 +126,37 @@ test("branch catalogue search and linked item snapshots reject stale or cross-br
     assert.equal(view.body.items[0].name, "Fixture cans");
     assert.equal(view.body.items[0].priceCents, 2400);
     assert.equal(view.body.items[0].offerId, offer);
+    assert.equal(view.body.items[0].offerUnavailable, false);
+
+    // Out of stock: still listed (tagged in the picker), flagged on the saved
+    // draft, and refused when linked again.
+    await execute(
+      s.db,
+      "UPDATE store_offers SET availability='unavailable' WHERE id=?",
+      [offer],
+    );
+    const outPage = await s.call(
+      `/catalogue/products?retailerId=costco&locationId=${branch}&query=Fixture`,
+    );
+    assert.equal(
+      outPage.body.items.find((x: any) => x.offerId === offer)?.availability,
+      "unavailable",
+    );
+    const outView = await s.call(
+      `/orders/${created.body.id}`,
+      "GET",
+      undefined,
+      s.tokens.maya,
+    );
+    assert.equal(outView.body.items[0].offerUnavailable, true);
+    const relinked = await s.call("/orders", "POST", body, s.tokens.maya);
+    assert.equal(relinked.status, 409);
+    assert.equal(relinked.body.error.code, "OFFER_UNAVAILABLE");
+    await execute(
+      s.db,
+      "UPDATE store_offers SET availability='unknown' WHERE id=?",
+      [offer],
+    );
 
     const forged = await s.call(
       "/orders",

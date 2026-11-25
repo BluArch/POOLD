@@ -1,4 +1,4 @@
-import { palette as P } from "../theme";
+import { palette as P, fonts } from "../theme";
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -14,7 +14,7 @@ import {
   shareSizes,
   money,
 } from "@poold/contracts";
-import { Field, CurrencyField, Choice, styles } from "./ui";
+import { Field, CurrencyField, Choice, Button, styles } from "./ui";
 import { Collapsible, QuantityStepper } from "./Sections";
 import { ItemIcon } from "./ItemIcon";
 import { Select } from "./Pickers";
@@ -40,6 +40,8 @@ export interface ItemDraft {
   storage: string;
   /** True once an item has been picked or "something else" was chosen. */
   chosen: boolean;
+  /** A saved catalogue item that has since gone out of stock at the branch. */
+  outOfStock?: boolean;
 }
 
 export const emptyDraft = (): ItemDraft => ({
@@ -82,7 +84,10 @@ export const draftFromCatalog = (c: CatalogItem): ItemDraft => ({
 
 /** Turns a saved item back into an editable draft (older items are parsed from their labels). */
 export const draftFromItem = (
-  i: ItemInput & { priceSource?: ItemDraft["priceSource"] },
+  i: ItemInput & {
+    priceSource?: ItemDraft["priceSource"];
+    offerUnavailable?: boolean;
+  },
 ): ItemDraft => {
   const c = CATALOG.find((x) => x.key === i.catalogKey);
   if (i.unit && i.packUnits && i.shareUnits)
@@ -107,6 +112,7 @@ export const draftFromItem = (
       packCount: i.packCount,
       storage: i.storage,
       chosen: true,
+      outOfStock: !!i.offerId && !!i.offerUnavailable,
     };
   const num = (s: string) => s.match(/^(\d+)\s+(.+)$/);
   const p = num(i.packLabel),
@@ -140,6 +146,8 @@ export const draftFromItem = (
 export function draftProblems(d: ItemDraft): string[] {
   const out: string[] = [];
   if (!d.chosen) return ["Choose an item."];
+  if (d.outOfStock)
+    return [`${d.name} is out of stock at this branch. Swap or remove it.`];
   if (!d.name.trim()) out.push("Give the item a name.");
   if (!d.category.trim()) out.push("Choose a category.");
   if (!d.unit.trim()) out.push("Say what one unit is called, like “can”.");
@@ -194,10 +202,39 @@ export const shareSummary = (d: ItemDraft) =>
     ? `1 share = ${plural(d.shareUnits, d.unit)}${d.unitDetail ? ` (${d.unitDetail})` : ""}`
     : "";
 
+function OutOfStockTag() {
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 4,
+        paddingVertical: 3,
+        paddingHorizontal: 10,
+        borderRadius: 999,
+        backgroundColor: P.stockOut,
+      }}
+    >
+      <Ionicons name="ban-outline" size={13} color={P.stockOutText} />
+      <Text
+        style={{
+          fontFamily: fonts.label,
+          fontSize: 12,
+          lineHeight: 16,
+          color: P.stockOutText,
+        }}
+      >
+        Out of stock
+      </Text>
+    </View>
+  );
+}
+
 /** Pick an item from the catalog (prices and notes fill in), or enter one by hand. */
 export function ItemEditor({
   value: d,
   onChange,
+  onRemove,
   title,
   initialSearch = "",
   retailerId = null,
@@ -205,6 +242,8 @@ export function ItemEditor({
 }: {
   value: ItemDraft;
   onChange: (d: ItemDraft) => void;
+  /** Removes this item from the group; shown on the out-of-stock warning. */
+  onRemove?: () => void;
   title: string;
   initialSearch?: string;
   retailerId?: string | null;
@@ -275,8 +314,13 @@ export function ItemEditor({
   const set = (change: Partial<ItemDraft>) => onChange({ ...d, ...change });
 
   if (!d.chosen) {
-    const catalogueItems = [
+    const unique = [
       ...new Map(results.map((item) => [item.id, item])).values(),
+    ];
+    // Out-of-stock items stay visible (so organizers know they exist) but go last.
+    const catalogueItems = [
+      ...unique.filter((item) => item.availability !== "unavailable"),
+      ...unique.filter((item) => item.availability === "unavailable"),
     ];
     const query = search.trim().toLowerCase();
     const legacyMatches = !retailerId
@@ -328,8 +372,7 @@ export function ItemEditor({
           ))}
           {catalogueItems.map((c, i) => {
             const onlineReference = c.priceSource === "online-reference";
-            const unavailable =
-              onlineReference && c.availability === "unavailable";
+            const unavailable = c.availability === "unavailable";
             const stockLabel = {
               available: "In stock at Langford",
               unavailable: "Out of stock at Langford",
@@ -340,31 +383,38 @@ export function ItemEditor({
                 key={c.id}
                 accessibilityRole="button"
                 accessibilityLabel={
-                  onlineReference
-                    ? `${c.name}, ${stockLabel}`
-                    : `Choose ${c.name}`
+                  unavailable
+                    ? `${c.name}, out of stock at this branch`
+                    : onlineReference
+                      ? `${c.name}, ${stockLabel}`
+                      : `Choose ${c.name}`
                 }
                 accessibilityState={{ disabled: unavailable }}
                 disabled={unavailable}
                 onPress={() => onChange(draftFromOffer(c))}
-                style={({ pressed }) => ({
+                style={{
                   padding: 14,
-                  gap: 2,
-                  backgroundColor: pressed ? P.paper : P.paper,
+                  flexDirection: "row",
+                  alignItems: "flex-start",
+                  gap: 10,
+                  backgroundColor: unavailable ? P.paperMuted : P.paper,
                   borderTopWidth: i ? 1 : 0,
                   borderTopColor: P.line,
-                })}
+                }}
               >
-                <Text style={styles.h3}>
-                  {c.brand ? `${c.brand} · ` : ""}
-                  {c.name}
-                </Text>
-                <Text style={styles.muted}>
-                  {c.packLabel} · {c.category}
-                </Text>
-                {onlineReference && (
-                  <Text style={styles.muted}>{stockLabel}</Text>
-                )}
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={[styles.h3, unavailable && { color: P.muted }]}>
+                    {c.brand ? `${c.brand} · ` : ""}
+                    {c.name}
+                  </Text>
+                  <Text style={styles.muted}>
+                    {c.packLabel} · {c.category}
+                  </Text>
+                  {onlineReference && !unavailable && (
+                    <Text style={styles.muted}>{stockLabel}</Text>
+                  )}
+                </View>
+                {unavailable && <OutOfStockTag />}
               </Pressable>
             );
           })}
@@ -447,7 +497,28 @@ export function ItemEditor({
   return (
     <View style={{ gap: 12 }}>
       <View style={styles.between}>
-        <ItemIcon item={d} size={48} />
+        <View>
+          <ItemIcon item={d} size={48} />
+          {d.outOfStock && (
+            <View
+              style={{
+                position: "absolute",
+                right: -4,
+                bottom: -4,
+                width: 20,
+                height: 20,
+                borderRadius: 10,
+                borderWidth: 2,
+                borderColor: P.paper,
+                backgroundColor: P.beet,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons name="alert" size={12} color={P.white} />
+            </View>
+          )}
+        </View>
         <Text style={[styles.h3, { flex: 1 }]}>{d.name || title}</Text>
         <Pressable
           accessibilityRole="button"
@@ -459,6 +530,42 @@ export function ItemEditor({
           </Text>
         </Pressable>
       </View>
+
+      {d.outOfStock && (
+        <View
+          accessibilityRole="alert"
+          style={{
+            backgroundColor: P.stockOut,
+            borderRadius: 14,
+            padding: 14,
+            gap: 10,
+          }}
+        >
+          <View style={[styles.row, { gap: 8 }]}>
+            <Ionicons name="ban-outline" size={20} color={P.stockOutText} />
+            <Text style={[styles.h3, { color: P.stockOutText, flex: 1 }]}>
+              Out of stock at this branch
+            </Text>
+          </View>
+          <View style={[styles.row, { gap: 8, flexWrap: "wrap" }]}>
+            <View style={{ flex: 1, minWidth: 120 }}>
+              <Button
+                variant="secondary"
+                onPress={() => onChange(emptyDraft())}
+              >
+                Swap item
+              </Button>
+            </View>
+            {onRemove && (
+              <View style={{ flex: 1, minWidth: 120 }}>
+                <Button secondary danger onPress={onRemove}>
+                  Remove item
+                </Button>
+              </View>
+            )}
+          </View>
+        </View>
+      )}
 
       {fromCatalog ? (
         <View style={styles.note}>
@@ -587,7 +694,8 @@ export function ItemEditor({
         />
       </View>
 
-      {fromCatalog ? (
+      {/* Editing the price unlinks the offer, which would keep an out-of-stock item. */}
+      {d.outOfStock ? null : fromCatalog ? (
         <Collapsible
           title="Price or notes changed?"
           summary="Only if the store price is different"

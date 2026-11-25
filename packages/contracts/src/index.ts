@@ -296,6 +296,8 @@ export interface Item {
   offerId: string | null;
   offerRevision: number | null;
   priceSource?: "legacy" | "manual" | "demo" | "retailer";
+  /** The linked catalogue offer is out of stock at the group's branch. */
+  offerUnavailable?: boolean;
 }
 export interface Retailer {
   id: string;

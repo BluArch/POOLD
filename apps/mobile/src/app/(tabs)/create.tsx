@@ -1,4 +1,4 @@
-import { palette as P, type, brand } from "../../theme";
+import { palette as P, type, brand, fonts } from "../../theme";
 import React, { useState, useEffect } from "react";
 import { View, Text } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
@@ -160,11 +160,14 @@ function DraftForm({ id }: { id?: string }) {
   const resetCatalogueItems = () =>
     setItems((current) =>
       current.map((item) =>
-        item.offerId || item.catalogKey || item.priceSource === "online-reference"
+        item.offerId ||
+        item.catalogKey ||
+        item.priceSource === "online-reference"
           ? emptyDraft()
           : item,
       ),
     );
+  const outOfStock = items.filter((d) => d.outOfStock).length;
   const problems = items.flatMap((d, n) =>
     draftProblems(d).map((p) => `Item ${n + 1}: ${p}`),
   );
@@ -384,6 +387,13 @@ function DraftForm({ id }: { id?: string }) {
             title={items.length > 1 ? `Item ${n + 1}` : "Item"}
             value={d}
             onChange={(next) => update(n, next)}
+            onRemove={() =>
+              setItems(
+                items.length > 1
+                  ? items.filter((_, i) => n !== i)
+                  : [emptyDraft()],
+              )
+            }
             retailerId={retailerId}
             locationId={locationId}
           />
@@ -411,6 +421,23 @@ function DraftForm({ id }: { id?: string }) {
       <ScreenFooter>
         <View style={{ gap: 6 }}>
           <ErrorText message={a.error} />
+          {outOfStock > 0 && (
+            <Text
+              style={[
+                styles.muted,
+                {
+                  color: P.stockOutText,
+                  textAlign: "center",
+                  fontFamily: fonts.medium,
+                  fontSize: 13,
+                },
+              ]}
+            >
+              {outOfStock === 1
+                ? "1 item is out of stock"
+                : `${outOfStock} items are out of stock`}
+            </Text>
+          )}
           <Button disabled={a.busy} onPress={() => void save()}>
             {a.busy ? "Saving…" : "Save draft"}
           </Button>

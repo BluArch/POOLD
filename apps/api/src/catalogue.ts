@@ -77,7 +77,8 @@ export function catalogue(db: Pool) {
         AND o.seller_key='first-party' AND o.price_basis='pack'
         AND p.category IS NOT NULL
       ))`,
-      "(o.availability<>'unavailable' OR s.access_method=?)",
+      // Out-of-stock offers stay in the results so organizers see them
+      // tagged; resolveItems still refuses to link one.
       "o.price_cents IS NOT NULL",
       "p.active=TRUE",
       "p.unit IS NOT NULL",
@@ -86,7 +87,6 @@ export function catalogue(db: Pool) {
     const params: unknown[] = [
       q.locationId,
       q.retailerId,
-      COSTCO_ONLINE_REFERENCE,
       COSTCO_ONLINE_REFERENCE,
     ];
     if (q.category) {

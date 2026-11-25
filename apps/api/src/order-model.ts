@@ -117,7 +117,9 @@ export async function orderView(
 ): Promise<OrderView> {
   const its = await rows(
     db,
-    `SELECT i.*,COALESCE((SELECT SUM(quantity) FROM share_claims c WHERE c.item_id=i.id),0) AS claimed,COALESCE((SELECT quantity FROM share_claims c WHERE c.item_id=i.id AND c.user_id=?),0) AS mine FROM order_items i WHERE order_id=? ORDER BY name`,
+    `SELECT i.*,COALESCE((SELECT SUM(quantity) FROM share_claims c WHERE c.item_id=i.id),0) AS claimed,COALESCE((SELECT quantity FROM share_claims c WHERE c.item_id=i.id AND c.user_id=?),0) AS mine,
+    COALESCE(so.availability='unavailable',FALSE) AS offer_unavailable
+    FROM order_items i LEFT JOIN store_offers so ON so.id=i.offer_id WHERE i.order_id=? ORDER BY i.name`,
     [uid, o.id],
   );
   const items: Item[] = its.map((i) => {
@@ -157,6 +159,7 @@ export async function orderView(
       offerRevision:
         i.offer_revision === null ? null : Number(i.offer_revision),
       priceSource: i.price_source,
+      offerUnavailable: !!i.offer_unavailable,
     };
   });
   // Buyers pay the marked-up price; the organizer pays Costco's at the store.

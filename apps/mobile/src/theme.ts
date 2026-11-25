@@ -53,6 +53,11 @@ export const palette = {
   herbSoft: "#B9C6AE",
   track: "#EFE7DA",
   tag: brand.yellow,
+  /** Rows that can't be chosen, e.g. out-of-stock catalogue items. */
+  paperMuted: "#FAF7F1",
+  /** Out-of-stock tag and warning background, and its text. */
+  stockOut: "#FBE6E1",
+  stockOutText: "#8E2A20",
 };
 
 export type Role = "buying" | "organizing";
