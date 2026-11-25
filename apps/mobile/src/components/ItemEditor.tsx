@@ -326,29 +326,48 @@ export function ItemEditor({
               </Text>
             </Pressable>
           ))}
-          {catalogueItems.map((c, i) => (
-            <Pressable
-              key={c.id}
-              accessibilityRole="button"
-              accessibilityLabel={`Choose ${c.name}`}
-              onPress={() => onChange(draftFromOffer(c))}
-              style={({ pressed }) => ({
-                padding: 14,
-                gap: 2,
-                backgroundColor: pressed ? P.paper : P.paper,
-                borderTopWidth: i ? 1 : 0,
-                borderTopColor: P.line,
-              })}
-            >
-              <Text style={styles.h3}>
-                {c.brand ? `${c.brand} · ` : ""}
-                {c.name}
-              </Text>
-              <Text style={styles.muted}>
-                {c.packLabel} · {c.category}
-              </Text>
-            </Pressable>
-          ))}
+          {catalogueItems.map((c, i) => {
+            const onlineReference = c.priceSource === "online-reference";
+            const unavailable =
+              onlineReference && c.availability === "unavailable";
+            const stockLabel = {
+              available: "In stock at Langford",
+              unavailable: "Out of stock at Langford",
+              unknown: "Langford stock unknown",
+            }[c.availability];
+            return (
+              <Pressable
+                key={c.id}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  onlineReference
+                    ? `${c.name}, ${stockLabel}`
+                    : `Choose ${c.name}`
+                }
+                accessibilityState={{ disabled: unavailable }}
+                disabled={unavailable}
+                onPress={() => onChange(draftFromOffer(c))}
+                style={({ pressed }) => ({
+                  padding: 14,
+                  gap: 2,
+                  backgroundColor: pressed ? P.paper : P.paper,
+                  borderTopWidth: i ? 1 : 0,
+                  borderTopColor: P.line,
+                })}
+              >
+                <Text style={styles.h3}>
+                  {c.brand ? `${c.brand} · ` : ""}
+                  {c.name}
+                </Text>
+                <Text style={styles.muted}>
+                  {c.packLabel} · {c.category}
+                </Text>
+                {onlineReference && (
+                  <Text style={styles.muted}>{stockLabel}</Text>
+                )}
+              </Pressable>
+            );
+          })}
           {busy && (
             <Text style={[styles.muted, { padding: 14 }]}>Searching…</Text>
           )}

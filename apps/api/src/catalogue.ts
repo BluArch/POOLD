@@ -77,7 +77,7 @@ export function catalogue(db: Pool) {
         AND o.seller_key='first-party' AND o.price_basis='pack'
         AND p.category IS NOT NULL
       ))`,
-      "o.availability<>'unavailable'",
+      "(o.availability<>'unavailable' OR s.access_method=?)",
       "o.price_cents IS NOT NULL",
       "p.active=TRUE",
       "p.unit IS NOT NULL",
@@ -86,6 +86,7 @@ export function catalogue(db: Pool) {
     const params: unknown[] = [
       q.locationId,
       q.retailerId,
+      COSTCO_ONLINE_REFERENCE,
       COSTCO_ONLINE_REFERENCE,
     ];
     if (q.category) {
@@ -116,11 +117,14 @@ export function catalogue(db: Pool) {
     }
     const data = await rows(
       db,
-      `SELECT o.id AS offer_id,o.revision,o.price_cents,o.price_basis,o.availability,o.observed_at,
+      `SELECT o.id AS offer_id,o.revision,o.price_cents,o.price_basis,o.observed_at,
+      CASE WHEN s.access_method=? AND (o.stock_observed_at IS NULL OR
+        o.stock_observed_at < UTC_TIMESTAMP(3) - INTERVAL 26 HOUR)
+        THEN 'unknown' ELSE o.availability END AS availability,
       p.id,p.name,p.brand,p.category,p.pack_label,p.unit,p.pack_units,p.unit_detail,s.retailer_id,s.access_method,l.id AS location_id
       FROM store_offers o JOIN catalogue_products p ON p.id=o.product_id JOIN catalogue_sources s ON s.id=p.source_id
       JOIN store_locations l ON l.id=o.location_id WHERE ${clauses.join(" AND ")} ORDER BY o.id LIMIT ?`,
-      [...params, q.limit + 1],
+      [COSTCO_ONLINE_REFERENCE, ...params, q.limit + 1],
     );
     const page = data.slice(0, q.limit);
     res.json({
@@ -128,9 +132,12 @@ export function catalogue(db: Pool) {
         id: x.id,
         // Online prices can prefill a manual estimate. A local offer can be
         // linked only when the branch price and terms have been verified.
-        offerId: x.access_method === COSTCO_ONLINE_REFERENCE ? null : x.offer_id,
+        offerId:
+          x.access_method === COSTCO_ONLINE_REFERENCE ? null : x.offer_id,
         revision:
-          x.access_method === COSTCO_ONLINE_REFERENCE ? null : Number(x.revision),
+          x.access_method === COSTCO_ONLINE_REFERENCE
+            ? null
+            : Number(x.revision),
         retailerId: x.retailer_id,
         locationId: x.location_id,
         name: x.name,

@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { itemFromUnits } from "@poold/contracts";
-import { database, execute } from "../src/db.js";
+import { database, execute, first } from "../src/db.js";
+import { refreshCostcoLangford } from "../src/refresh-costco-langford.js";
 import { draft, setup } from "./helpers.js";
 
 test("branch catalogue search and linked item snapshots reject stale or cross-branch offers", async () => {
@@ -222,7 +223,12 @@ test("Costco online reference prices prefill a manual estimate and only buyers s
       undefined,
       s.tokens.maya,
     );
-    const buyer = await s.call(`/orders/${id}`, "GET", undefined, s.tokens.jordan);
+    const buyer = await s.call(
+      `/orders/${id}`,
+      "GET",
+      undefined,
+      s.tokens.jordan,
+    );
     assert.equal(organizer.body.items[0].priceCents, 1699);
     assert.equal(organizer.body.items[0].shareEstimateCents, 425);
     assert.equal(buyer.body.items[0].shareEstimateCents, 489);
@@ -235,6 +241,100 @@ test("Costco online reference prices prefill a manual estimate and only buyers s
       await execute(db, "DELETE FROM catalogue_sources WHERE id=?", [source]);
     } finally {
       await db.end();
+    }
+  }
+});
+
+test("Langford refresh tracks online price and warehouse stock independently", async () => {
+  const s = await setup();
+  const source = randomUUID(),
+    product = randomUUID(),
+    offer = randomUUID();
+  const branch = "00000000-0000-4000-8000-000000000256";
+  const itemNumber = "984320111999";
+  const cataloguePath = `/catalogue/products?retailerId=costco&locationId=${branch}&query=${itemNumber}`;
+  const older = new Date(Date.now() - 30_000).toISOString();
+  const newer = new Date().toISOString();
+  const update = (
+    observedAt: string,
+    values: { onlinePackPriceCents?: number; warehouseStock?: string },
+  ) =>
+    refreshCostcoLangford(s.db, {
+      source: "costco.ca",
+      warehouseId: "256",
+      currency: "CAD",
+      observedAt,
+      items: [{ itemNumber, ...values }],
+    });
+  try {
+    await execute(
+      s.db,
+      `INSERT INTO catalogue_sources(id,retailer_id,name,channel,access_method,coverage_note,rights_note)
+      VALUES(?,'costco','Costco.ca shelf-stable price reference','warehouse','costco-online-reference','fixture','fixture')`,
+      [source],
+    );
+    await execute(
+      s.db,
+      `INSERT INTO catalogue_products(id,source_id,source_product_id,name,source_category,category,pack_label,unit,pack_units)
+      VALUES(?,?,?,'Fixture jars','Pantry','Pantry','4 jars','jar',4)`,
+      [product, source, itemNumber],
+    );
+    await execute(
+      s.db,
+      `INSERT INTO store_offers(id,source_id,product_id,location_id,source_offer_id,price_basis,price_cents)
+      VALUES(?,?,?,?,?,'pack',1699)`,
+      [offer, source, product, branch, `costco-ca:${itemNumber}`],
+    );
+
+    await update(newer, { warehouseStock: "unavailable" });
+    await assert.rejects(
+      update(newer, {
+        onlinePackPriceCents: 1999,
+        warehouseStock: "available",
+      }),
+      /Conflicting Langford stock/,
+    );
+    const afterFailedUpdate = (await s.call(cataloguePath)).body.items[0];
+    assert.equal(afterFailedUpdate.priceCents, 1699);
+    assert.equal(afterFailedUpdate.availability, "unavailable");
+
+    const priceUpdate = {
+      onlinePackPriceCents: 1899,
+      warehouseStock: "available",
+    };
+    await update(older, priceUpdate);
+    await update(older, priceUpdate);
+    const afterRetry = (await s.call(cataloguePath)).body.items[0];
+    assert.equal(afterRetry.priceCents, 1899);
+    assert.equal(afterRetry.availability, "unavailable");
+    assert.equal(afterRetry.offerId, null);
+    const observations = await first(
+      s.db,
+      "SELECT COUNT(*) AS n FROM price_observations WHERE offer_id=?",
+      [offer],
+    );
+    assert.equal(Number(observations?.n), 1);
+
+    await execute(
+      s.db,
+      "UPDATE store_offers SET stock_observed_at=UTC_TIMESTAMP(3) - INTERVAL 27 HOUR WHERE id=?",
+      [offer],
+    );
+    const expired = (await s.call(cataloguePath)).body.items[0];
+    assert.equal(expired.availability, "unknown");
+    assert.equal(expired.priceCents, 1899);
+  } finally {
+    try {
+      await execute(s.db, "DELETE FROM price_observations WHERE offer_id=?", [
+        offer,
+      ]);
+      await execute(s.db, "DELETE FROM store_offers WHERE id=?", [offer]);
+      await execute(s.db, "DELETE FROM catalogue_products WHERE id=?", [
+        product,
+      ]);
+      await execute(s.db, "DELETE FROM catalogue_sources WHERE id=?", [source]);
+    } finally {
+      await s.close();
     }
   }
 });

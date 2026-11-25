@@ -2,7 +2,7 @@
 
 November 5, 2026. The API has retailer and Greater Victoria branch records, product and offer tables, immutable price observations, a bounded branch search endpoint, and a local authorized-export importer. Organizers can choose a branch, search orderable offers, select fixed or exact gram/millilitre shares, and save a price/pack snapshot. Manual items and old drafts remain supported. There are **no retailer product imports in this repository** and no claim of complete branch assortment or live stock.
 
-The item picker shows each product once, with its name, pack size, and category. Prices, availability, and price-check timestamps are hidden in the catalogue list; organizers review the estimate after choosing an item.
+The item picker shows each product once, with its name, pack size, and category. Organizers review the price estimate after choosing an item. Costco.ca references also show Langford stock status. Items reported out of stock remain visible but disabled.
 
 ## Class-project demo catalogue
 
@@ -47,4 +47,25 @@ The importer validates every row and source ID, records quarantine reasons, chec
 | Bulk Barn | Authorized full category/item export, per-weight branch prices, handling/pack rules, rights and count |
 | Walmart | Authorized Canadian catalogue and local first-party offer source, marketplace separation, rights and count |
 
-No complete authorized feed or representative sample for these four sources has been provided. Source capability records, full backfills, automatic refresh jobs, production capacity costing, physical assortment checks, and comparison-price coverage remain open. Price observations are estimates and stock may be unknown. The payment workflow still needs commercial, tax, provider, and funding validation before any live authorization or payout.
+No complete authorized feed or representative sample for these four sources has been provided. Source capability records, full backfills, production refresh activation, capacity costing, physical assortment checks, and comparison-price coverage remain open. Price observations are estimates and stock may be unknown. The payment workflow still needs commercial, tax, provider, and funding validation before any live authorization or payout.
+
+## Nightly Costco Langford refresh
+
+`render.costco.yaml` defines a separate Render cron service for 09:00 UTC daily, which is 2:00 a.m. Pacific time in Langford year-round. Render runs it independently of the web service. Apply the API's normal deployment first so migration 017 is present, then create the cron service from that Blueprint path on `main`. Set `DATABASE_URL`, the applicable `DATABASE_CA_CERT`, and `COSTCO_LANGFORD_EXPORT_URL` in Render. Set `COSTCO_LANGFORD_EXPORT_TOKEN` as a secret if the export requires a bearer token.
+
+The job reads an authorized HTTPS JSON export of Costco.ca observations, scoped to Langford warehouse 256. It expects the export to supply the observation timestamp, the Costco item number, and either the original online pack price in CAD cents, an explicit Langford stock status, or both. For example:
+
+```json
+{
+  "source": "costco.ca",
+  "warehouseId": "256",
+  "currency": "CAD",
+  "observedAt": "2026-11-25T08:50:00Z",
+  "items": [
+    { "itemNumber": "1234567", "onlinePackPriceCents": 1699, "warehouseStock": "available" },
+    { "itemNumber": "2345678", "warehouseStock": "unavailable" }
+  ]
+}
+```
+
+Use `unknown` when Costco provides no warehouse status. Omitted fields and unmatched listings leave existing values intact. The sync updates matching active listings from the existing Costco.ca online-reference source and keeps online prices as estimates. A stock report older than 26 hours displays as unknown. Invalid exports and database failures leave the previous catalogue intact. Render run logs show received, matched, and refreshed counts.

@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "migrate:host": "node dist/migrate.js",
+    "catalogue:refresh-costco:host": "node dist/refresh-costco-langford.js",
     "start:host": "node dist/index.js",
     "test": "tsx --env-file=../../.env --test --test-concurrency=1 test/*.test.ts",
     "mail:verify": "tsx --env-file=../../.env src/check-mail.ts",
