@@ -13,7 +13,53 @@ import { orderInput } from "@poold/contracts";
 import { settleAll, releaseRemaining } from "./payments.js";
 import { prepareClose, invalidateApprovals } from "./payments/engine.js";
 import { runPaymentReconciliation } from "./payments/reconcile.js";
-import { proofInput, ratingInput } from "@poold/contracts";
+import { proofInput, ratingInput, money } from "@poold/contracts";
+import { json } from "./payments/engine.js";
+import type { BasketLine } from "./payments/baskets.js";
+/**
+ * Tell each buyer who took shares of an item that it's out of stock, and what
+ * they get back. Members without shares of it aren't bothered.
+ */
+async function notifyOutOfStock(c: DB, o: any, it: any) {
+  const paid = await rows(
+    c,
+    "SELECT member_id,basket_lines FROM funding_instructions WHERE order_id=? AND status IN('paid','refund_pending','refunded')",
+    [o.id],
+  );
+  const event = `out-of-stock:${it.id}:${id()}`;
+  for (const claim of await rows(
+    c,
+    "SELECT user_id,quantity FROM share_claims WHERE item_id=? AND quantity>0 AND user_id<>?",
+    [it.id, o.organizer_id],
+  )) {
+    const shares = `${claim.quantity} share${claim.quantity === 1 ? "" : "s"}`;
+    // Same per-line amount reconcileReductions refunds for an unavailable item.
+    const refund = paid
+      .filter((p) => p.member_id === claim.user_id)
+      .flatMap((p) => json<BasketLine[]>(p.basket_lines))
+      .filter((l) => l.itemId === it.id)
+      .reduce(
+        (n, l) =>
+          n +
+          l.groceryCents +
+          l.markupCents +
+          l.serviceFeeCents +
+          l.feeTaxCents,
+        0,
+      );
+    await notify(
+      c,
+      claim.user_id,
+      o.id,
+      `${it.name} is out of stock for ${o.name}, so it won’t be in your bag. ${
+        refund > 0
+          ? `${money(refund)} for your ${shares} is being refunded to your card.`
+          : `You won’t be charged for your ${shares}.`
+      }`,
+      event,
+    );
+  }
+}
 const deliverableSql = `SELECT m.* FROM memberships m WHERE m.order_id=? AND EXISTS(SELECT 1 FROM share_claims c JOIN order_items i ON i.id=c.item_id WHERE c.user_id=m.user_id AND i.order_id=m.order_id AND i.available=TRUE AND c.quantity>0)`;
 export function fulfillment(db: Pool) {
   const r = Router();
@@ -260,7 +306,9 @@ export function fulfillment(db: Pool) {
             ? false
             : (b.available ?? !!it.available),
         price = b.priceCents ?? it.price_cents,
-        changed = price !== it.price_cents || available !== !!it.available;
+        changed = price !== it.price_cents || available !== !!it.available,
+        outOfStock =
+          !available && !!it.available && b.shortfallDecision !== "skip";
       const bought = changed ? false : (b.bought ?? !!it.bought);
       await execute(
         c,
@@ -283,18 +331,20 @@ export function fulfillment(db: Pool) {
           "UPDATE memberships m SET packed=FALSE WHERE order_id=? AND EXISTS(SELECT 1 FROM share_claims WHERE item_id=? AND user_id=m.user_id)",
           [o.id, it.id],
         );
-        await notifyMembers(
-          c,
-          o.id,
-          `${it.name} in ${o.name}: ${available ? `estimated pack price is now CAD ${(price / 100).toFixed(2)}` : "unavailable; excluded from product-cost estimates"}. Review your order.`,
-          `item:${id()}`,
-        );
         // Cheaper or unavailable now: refund what members overpaid.
         await settleAll(
           c,
           o,
           available ? `${it.name} got cheaper` : `${it.name} was unavailable`,
         );
+        if (outOfStock) await notifyOutOfStock(c, o, it);
+        else
+          await notifyMembers(
+            c,
+            o.id,
+            `${it.name} in ${o.name}: ${available ? `estimated pack price is now CAD ${(price / 100).toFixed(2)}` : "unavailable; excluded from product-cost estimates"}. Review your order.`,
+            `item:${id()}`,
+          );
       }
     });
     res.json({ ok: true });
