@@ -30,7 +30,7 @@ import {
 } from "./ui";
 import { ItemIcon } from "./ItemIcon";
 import { ReceiptLine } from "./Receipt";
-import { palette as P, type, brand } from "../theme";
+import { palette as P, type, brand, fonts } from "../theme";
 import { Badge } from "./Market";
 import { RequestCard } from "./RequestList";
 import { DirectionsButton } from "./MemberView";
@@ -40,6 +40,7 @@ import {
   emptyDraft,
   draftProblems,
   draftToInput,
+  OutOfStockTag,
 } from "./ItemEditor";
 import { DateTimeField, roundUp } from "./Pickers";
 import { useSession } from "../session";
@@ -802,6 +803,8 @@ function ShopItem({
       await refresh();
     });
   const onList = i.available && i.claimed > 0;
+  const [confirmOut, setConfirmOut] = useState(false);
+  const canMarkOut = shopping && onList && !readOnly && !i.bought;
   return (
     <View
       style={{
@@ -836,8 +839,62 @@ function ShopItem({
         {i.claimed} share{i.claimed === 1 ? "" : "s"} committed ·{" "}
         {money(i.priceCents)} per pack
         {i.priceSource === "demo" ? " · class-project demo estimate" : ""}
-        {!i.available ? " · Unavailable" : ""}
       </Text>
+      {!i.available && (
+        <View style={{ alignSelf: "flex-start" }}>
+          <OutOfStockTag />
+        </View>
+      )}
+      {canMarkOut && !confirmOut && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Mark ${i.name} out of stock`}
+          onPress={() => setConfirmOut(true)}
+          disabled={a.busy}
+          style={({ pressed }) => ({
+            alignSelf: "flex-start",
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+            minHeight: 40,
+            paddingHorizontal: 14,
+            borderRadius: 999,
+            borderWidth: 1.5,
+            borderColor: P.line,
+            backgroundColor: pressed ? P.stockOut : P.paper,
+          })}
+        >
+          <Ionicons name="ban-outline" size={16} color={P.stockOutText} />
+          <Text
+            style={{
+              fontFamily: fonts.label,
+              fontSize: 14,
+              color: P.stockOutText,
+            }}
+          >
+            Out of stock
+          </Text>
+        </Pressable>
+      )}
+      {canMarkOut && confirmOut && (
+        <View style={styles.note}>
+          <Text style={styles.h3}>Mark {i.name} out of stock?</Text>
+          <Text style={styles.muted}>
+            Everyone with shares of it is told right away and refunded for them.
+            You can’t undo this.
+          </Text>
+          <Button
+            danger
+            disabled={a.busy}
+            onPress={() => void patch({ available: false })}
+          >
+            {a.busy ? "Working…" : "Yes, it’s out of stock"}
+          </Button>
+          <Button secondary onPress={() => setConfirmOut(false)}>
+            Go back
+          </Button>
+        </View>
+      )}
       {i.shortfall > 0 && i.available && !readOnly && (
         <View style={styles.note}>
           <Text style={styles.text}>
@@ -858,19 +915,8 @@ function ShopItem({
           </View>
         </View>
       )}
-      {!readOnly && (
-        <Collapsible
-          title="Price or stock changed?"
-          summary="Update price or availability"
-        >
-          <Check
-            label={i.available ? "In stock" : "Unavailable at the store"}
-            value={i.available}
-            onChange={(available) =>
-              void patch({ available, shortfallDecision: "pending" })
-            }
-            disabled={a.busy}
-          />
+      {!readOnly && i.available && (
+        <Collapsible title="Price changed?" summary="Update the pack price">
           <Field
             label={`Pack price for ${i.name} (CAD)`}
             value={price}
