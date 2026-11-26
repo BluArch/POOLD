@@ -14,7 +14,6 @@ import {
   Field,
   Button,
   Choice,
-  Check,
   styles,
   ErrorText,
   useAction,
@@ -70,7 +69,6 @@ function DraftForm({ id }: { id?: string }) {
     [coords, setCoords] = useState<{ lat: number; lng: number } | null>(
       PICKUP_PLACES[0],
     ),
-    [publicPickup, setPublic] = useState(true),
     [items, setItems] = useState<ItemDraft[]>([emptyDraft()]);
 
   const load = () =>
@@ -194,7 +192,7 @@ function DraftForm({ id }: { id?: string }) {
         pickupLocation: location,
         pickupLat: coords?.lat ?? null,
         pickupLng: coords?.lng ?? null,
-        publicPickup: publicPickup as true,
+        publicPickup: true,
         items: items.map(draftToInput),
       };
       let oid = id;
@@ -257,7 +255,7 @@ function DraftForm({ id }: { id?: string }) {
         />
         {!!retailerId && (
           <Select
-            label="Purchasing branch"
+            label="Location"
             value={
               branches.find((branch) => branch.id === locationId)?.name ?? ""
             }
@@ -369,11 +367,6 @@ function DraftForm({ id }: { id?: string }) {
             setCoords(null);
           }}
           placeholder="Clearihue Building entrance"
-        />
-        <Check
-          label="This is a safe, public pickup place"
-          value={publicPickup}
-          onChange={setPublic}
         />
       </View>
 

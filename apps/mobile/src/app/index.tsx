@@ -596,7 +596,7 @@ function Landing({
             <DemoCard busy={busy} onPress={() => onNext("demo")} />
           )}
           <ErrorText message={error} />
-          <Button onPress={() => onNext("register")}>Sign up</Button>
+          <Button onPress={() => onNext("register")}>Create an account</Button>
           <Button secondary onPress={() => onNext("login")}>
             Sign in
           </Button>
