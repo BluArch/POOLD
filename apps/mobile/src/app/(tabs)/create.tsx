@@ -255,7 +255,7 @@ function DraftForm({ id }: { id?: string }) {
         />
         {!!retailerId && (
           <Select
-            label="Purchasing branch"
+            label="Location"
             value={
               branches.find((branch) => branch.id === locationId)?.name ?? ""
             }
