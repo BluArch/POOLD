@@ -2,7 +2,7 @@
 
 November 5, 2026. The API has retailer and Greater Victoria branch records, product and offer tables, immutable price observations, a bounded branch search endpoint, and a local authorized-export importer. Organizers can choose a branch, search orderable offers, select fixed or exact gram/millilitre shares, and save a price/pack snapshot. Manual items and old drafts remain supported. There are **no retailer product imports in this repository** and no claim of complete branch assortment or live stock.
 
-The item picker shows each product once, with its name, pack size, and category. Organizers review the price estimate after choosing an item. Costco.ca references also show Langford stock status. Items reported out of stock remain visible but disabled.
+The item picker shows each product once, with its name, pack size, and category. Organizers review the price estimate after choosing an item. Items recorded as out of stock stay visible with an Out of stock tag and are disabled.
 
 ## Class-project demo catalogue
 
@@ -53,7 +53,7 @@ No complete authorized feed or representative sample for these four sources has 
 
 `render.costco.yaml` defines a separate Render cron service for 09:00 UTC daily, which is 2:00 a.m. Pacific time in Langford year-round. `Dockerfile.costco` builds the worker with Chromium. Render runs it independently of the web service. Apply the API's normal deployment first so migration 017 is present. Set `DATABASE_URL` and the applicable `DATABASE_CA_CERT` in Render.
 
-The worker opens Costco.ca's public Grocery & Household category listings, selects Langford and the delivery postal code V9B 6A2, and checks each category with Costco's out-of-stock filter enabled. It matches the Costco product IDs in the imported catalogue's product links. It uses the online pack price and explicit Langford availability independently. Listings missing from the sweep keep their previous price and their stock expires after 26 hours. Run the command with `-- --check` for a read-only observation count.
+The worker opens Costco.ca's public Grocery & Household category listings, selects Langford and the delivery postal code V9B 6A2, and checks each category with Costco's out-of-stock filter enabled. It matches the Costco product IDs in the imported catalogue's product links. It uses the online pack price and explicit Langford availability independently. Listings missing from the sweep keep their previous price and stock status. Run the command with `-- --check` for a read-only observation count.
 
 To use an HTTPS JSON export scoped to Langford warehouse 256, set `COSTCO_LANGFORD_EXPORT_URL` and, if required, `COSTCO_LANGFORD_EXPORT_TOKEN`. The export supplies the observation timestamp, Costco item number, and the original online pack price in CAD cents, an explicit Langford stock status, or both. For example:
 
@@ -70,4 +70,4 @@ To use an HTTPS JSON export scoped to Langford warehouse 256, set `COSTCO_LANGFO
 }
 ```
 
-Use `unknown` when Costco provides no warehouse status. Omitted fields and unmatched listings leave existing values intact. The sync updates matching active listings from the existing Costco.ca online-reference source and keeps online prices as estimates. A stock report older than 26 hours displays as unknown. Invalid exports and database failures leave the previous catalogue intact. Render run logs show received, matched, and refreshed counts.
+Use `unknown` when Costco provides no warehouse status. Omitted fields and unmatched listings leave existing values intact. The sync updates matching active listings from the existing Costco.ca online-reference source and keeps online prices as estimates. The picker displays the Out of stock tag for listings with a stored `unavailable` status regardless of when it was observed. Invalid exports and database failures leave the previous catalogue intact. Render run logs show received, matched, and refreshed counts.

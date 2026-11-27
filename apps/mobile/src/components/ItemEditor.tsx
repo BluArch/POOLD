@@ -371,13 +371,7 @@ export function ItemEditor({
             </Pressable>
           ))}
           {catalogueItems.map((c, i) => {
-            const onlineReference = c.priceSource === "online-reference";
             const unavailable = c.availability === "unavailable";
-            const stockLabel = {
-              available: "In stock at Langford",
-              unavailable: "Out of stock at Langford",
-              unknown: "Langford stock unknown",
-            }[c.availability];
             return (
               <Pressable
                 key={c.id}
@@ -385,9 +379,7 @@ export function ItemEditor({
                 accessibilityLabel={
                   unavailable
                     ? `${c.name}, out of stock at this branch`
-                    : onlineReference
-                      ? `${c.name}, ${stockLabel}`
-                      : `Choose ${c.name}`
+                    : `Choose ${c.name}`
                 }
                 accessibilityState={{ disabled: unavailable }}
                 disabled={unavailable}
@@ -410,9 +402,6 @@ export function ItemEditor({
                   <Text style={styles.muted}>
                     {c.packLabel} · {c.category}
                   </Text>
-                  {onlineReference && !unavailable && (
-                    <Text style={styles.muted}>{stockLabel}</Text>
-                  )}
                 </View>
                 {unavailable && <OutOfStockTag />}
               </Pressable>

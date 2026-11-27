@@ -398,9 +398,13 @@ test("Langford refresh tracks online price and warehouse stock independently", a
       "UPDATE store_offers SET stock_observed_at=UTC_TIMESTAMP(3) - INTERVAL 27 HOUR WHERE id=?",
       [offer],
     );
-    const expired = (await s.call(cataloguePath)).body.items[0];
-    assert.equal(expired.availability, "unknown");
-    assert.equal(expired.priceCents, 1899);
+    const afterTimePassed = (await s.call(cataloguePath)).body.items[0];
+    assert.equal(afterTimePassed.availability, "unavailable");
+    assert.equal(afterTimePassed.priceCents, 1899);
+
+    await update(newer, { warehouseStock: "available" });
+    const afterRestock = (await s.call(cataloguePath)).body.items[0];
+    assert.equal(afterRestock.availability, "available");
   } finally {
     try {
       await execute(s.db, "DELETE FROM price_observations WHERE offer_id=?", [

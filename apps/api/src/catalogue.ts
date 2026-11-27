@@ -117,14 +117,11 @@ export function catalogue(db: Pool) {
     }
     const data = await rows(
       db,
-      `SELECT o.id AS offer_id,o.revision,o.price_cents,o.price_basis,o.observed_at,
-      CASE WHEN s.access_method=? AND (o.stock_observed_at IS NULL OR
-        o.stock_observed_at < UTC_TIMESTAMP(3) - INTERVAL 26 HOUR)
-        THEN 'unknown' ELSE o.availability END AS availability,
+      `SELECT o.id AS offer_id,o.revision,o.price_cents,o.price_basis,o.observed_at,o.availability,
       p.id,p.name,p.brand,p.category,p.pack_label,p.unit,p.pack_units,p.unit_detail,s.retailer_id,s.access_method,l.id AS location_id
       FROM store_offers o JOIN catalogue_products p ON p.id=o.product_id JOIN catalogue_sources s ON s.id=p.source_id
       JOIN store_locations l ON l.id=o.location_id WHERE ${clauses.join(" AND ")} ORDER BY o.id LIMIT ?`,
-      [COSTCO_ONLINE_REFERENCE, ...params, q.limit + 1],
+      [...params, q.limit + 1],
     );
     const page = data.slice(0, q.limit);
     res.json({
